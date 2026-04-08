@@ -44,4 +44,14 @@ return [
     |
     */
     'script_path' => __DIR__ . '/../resources/js/lightvel.js',
+
+    /*
+    |--------------------------------------------------------------------------
+    | Navigation progress bar color
+    |--------------------------------------------------------------------------
+    |
+    | Used when light:navigate links are fetched without a full refresh.
+    |
+    */
+    'progress_bar_color' => env('LIGHTVEL_PROGRESS_BAR_COLOR', '#111827'),
 ];

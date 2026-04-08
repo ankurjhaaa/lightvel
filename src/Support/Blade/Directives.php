@@ -17,6 +17,7 @@ class Directives
             $view = preg_replace('/light:click="([^"]+)"/', 'type="button" data-light-click="$1"', $view);
             $view = preg_replace('/light:submit="([^"]+)"/', 'data-light-submit="$1"', $view);
             $view = preg_replace('/light:bind="([^"]+)"/', 'data-light-bind="$1"', $view);
+            $view = preg_replace('/\s+light:navigate(?:="[^"]*")?/', ' data-light-navigate="true"', $view);
 
             return preg_replace('/light:html="([^"]+)"/', 'data-light-html="$1"', $view);
         });
