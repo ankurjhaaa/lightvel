@@ -1,0 +1,26 @@
+@php
+
+use Lightvel\Component;
+use Lightvel\Layout;
+
+new #[Layout('{{ layout_name }}')] class extends Component {
+    public $status = '{{ status_label }}';
+
+    public function lightvel()
+    {
+        // Load initial data here.
+    }
+
+    public function action()
+    {
+        // Put your action logic here.
+        $this->status = '{{ action_label }}';
+    }
+};
+
+@endphp
+
+<div style="max-width:720px;margin:40px auto;padding:24px;border:1px solid #e2e8f0;border-radius:16px;background:#fff;">
+    <h2 light:bind="status">{{ $status }}</h2>
+    <button light:click="action" style="padding:10px 16px;border-radius:10px;">Run Action</button>
+</div>
