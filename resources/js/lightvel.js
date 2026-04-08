@@ -31,8 +31,21 @@
             },
             body: JSON.stringify({ action, params }),
         })
-            .then((r) => r.json())
-            .then(update);
+            .then((r) => {
+                if (!r.ok) {
+                    throw new Error('Request failed with status ' + r.status);
+                }
+
+                return r.json();
+            })
+            .then(update)
+            .catch((err) => {
+                console.error('Lightvel request failed:', err);
+
+                document.querySelectorAll('[data-light-bind="status"]').forEach((el) => {
+                    el.innerText = 'Request failed. Check console/logs.';
+                });
+            });
     }
 
     function update(data) {

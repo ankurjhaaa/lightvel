@@ -31,8 +31,7 @@ class Component
                         $this->$k = $v;
                     }
                 }
-
-                $actionArgs = array_values($params);
+                $actionArgs = [];
             }
         }
 
