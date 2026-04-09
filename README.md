@@ -130,7 +130,6 @@ new #[Layout('app')] class extends Component {
 ## Install command publishes
 
 - config/lightvel.php
-- layout and page stubs
 - Lightvel JavaScript runtime
 
 ## Packagist publishing

@@ -49,6 +49,7 @@ class Compiler
 
             \$__data = get_object_vars(\$__lv);
             extract(\$__data);
+            \$errors = \$__lv->getErrorBag();
             ob_start();
             ?>";
 
@@ -57,7 +58,10 @@ class Compiler
         $view .= "<?php
             \$__content = ob_get_clean();
 
-            \$__dom = '<div data-light-root>' . \$__content . '</div>';
+            \$__rules = \$__lv->rulesForClient();
+            \$__rulesAttr = empty(\$__rules) ? '' : ' data-light-rules=\"' . htmlspecialchars(json_encode(\$__rules), ENT_QUOTES, 'UTF-8') . '\"';
+
+            \$__dom = '<div data-light-root' . \$__rulesAttr . '>' . \$__content . '</div>';
 
             if (request()->header('X-Light')) {
                 \$__payload = is_array(\$__result) ? \$__result : [];

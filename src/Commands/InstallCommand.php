@@ -8,7 +8,7 @@ class InstallCommand extends Command
 {
     protected $signature = 'lightvel:install';
 
-    protected $description = 'Publish Lightvel demo view';
+    protected $description = 'Publish Lightvel config and runtime assets';
 
     public function handle(): int
     {
