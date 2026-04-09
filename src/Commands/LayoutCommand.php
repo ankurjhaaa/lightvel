@@ -9,7 +9,7 @@ use Lightvel\Support\ViewName;
 
 class LayoutCommand extends Command
 {
-    protected $signature = 'lightvel:layout {name : Layout name such as app or components.layout.admin} {--force : Overwrite the layout if it already exists}';
+    protected $signature = 'lightvel:layout {name : Layout name such as app} {--force : Overwrite the layout if it already exists}';
 
     protected $description = 'Create a Lightvel layout view';
 

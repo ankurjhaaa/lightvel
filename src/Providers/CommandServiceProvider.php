@@ -3,7 +3,6 @@
 namespace Lightvel\Providers;
 
 use Illuminate\Support\ServiceProvider;
-use Lightvel\Commands\ComponentCommand;
 use Lightvel\Commands\InstallCommand;
 use Lightvel\Commands\LayoutCommand;
 use Lightvel\Commands\MakeCommand;
@@ -21,7 +20,6 @@ class CommandServiceProvider extends ServiceProvider
                 InstallCommand::class,
                 LayoutCommand::class,
                 MakeCommand::class,
-                ComponentCommand::class,
             ]);
         }
     }

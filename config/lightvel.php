@@ -28,11 +28,12 @@ return [
     | Generated views folder
     |--------------------------------------------------------------------------
     |
-    | The first folder segment after a generator namespace is treated as the
-    | top-level view folder.
+    | Optional extra subfolder under resources/views for generated pages.
+    | Keep empty to generate directly in resources/views.
+    | Example: "modules" => resources/views/modules/pages/home.blade.php
     |
     */
-    'view_root' => 'views',
+    'view_root' => '',
 
     /*
     |--------------------------------------------------------------------------

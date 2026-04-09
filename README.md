@@ -1,13 +1,13 @@
 # Lightvel
 
-Lightvel is a lightweight Laravel reactive package inspired by Livewire.
+Lightvel is a lightweight reactive layer for Laravel Blade pages.
 
-It is made for developers who want:
+It gives you:
 
-- simple Blade-based pages
-- small payloads
-- fast UI updates
-- easy command-based file generation
+- server-side component actions using plain PHP classes in Blade
+- client-side state helpers for common UI behavior
+- minimal runtime with fast DOM updates
+- simple setup commands
 
 ## Author
 
@@ -19,153 +19,240 @@ It is made for developers who want:
 This package is open-sourced software licensed under the MIT license.
 See [LICENSE](LICENSE).
 
-## Install
+---
+
+## Installation
 
 ```bash
 composer require lightvel/lightvel
 php artisan lightvel:install
 ```
 
-## How to use
+`lightvel:install` publishes:
 
-### 1) Create a layout
+- `config/lightvel.php`
+- `public/vendor/lightvel/lightvel.js`
+
+---
+
+## Quick Start
+
+### 1) Create layout
 
 ```bash
 php artisan lightvel:layout app
 ```
 
-This creates a layout file at:
+Creates:
 
 ```text
 resources/views/layouts/app.blade.php
 ```
 
-You can also create custom layouts like:
+### 2) Create page
 
 ```bash
-php artisan lightvel:layout components.layout.admin
+php artisan make:lightvel pages::home
 ```
 
-### 2) Create a Lightvel page
-
-```bash
-php artisan make:lightvel pages::app.home
-```
-
-This creates a page file at:
+Creates:
 
 ```text
-resources/views/pages/app/home.blade.php
+resources/views/pages/home.blade.php
 ```
 
-You can also use:
+### 3) Add route (GET + POST)
 
-```bash
-php artisan lightvel:component pages::app.home
+Lightvel actions use POST on the same URL.
+
+```php
+use Illuminate\Support\Facades\Route;
+
+Route::match(['GET', 'POST'], '/', function () {
+    return view('pages.home');
+});
 ```
 
-Both commands generate a starter page with:
+### 4) Ensure layout has `@lightScripts`
 
-- a component class
-- a `lightvel()` loader method
-- a sample action method
-- a status field
-- a working `light:click` example
+```blade
+<meta name="csrf-token" content="{{ csrf_token() }}">
+...
+@lightScripts
+```
 
-### 3) Write your page
+---
 
-Example:
+## Server-side Component Example
 
 ```blade
 @php
-
 use Lightvel\Component;
 use Lightvel\Layout;
 
 new #[Layout('app')] class extends Component {
-    public $name = '';
-    public $status = 'Ready';
+    public $count = 0;
 
-    public function lightvel()
-    {
-        // load initial data here
-    }
-
-    public function save()
-    {
-        $this->status = 'Saved';
-    }
+    public function increment() { $this->count++; }
+    public function decrement() { $this->count--; }
 };
-
 @endphp
 
 <div>
-    <h2 light:bind="status">{{ $status }}</h2>
-    <input type="text" light:model="name">
-    <button light:click="save">Save</button>
+    <button light:click="decrement">-</button>
+    <span light:bind="count">{{ $count }}</span>
+    <button light:click="increment">+</button>
 </div>
 ```
 
-## Current features
+---
 
-- `light:model` for two-way form fields
-- `light:click` for action calls
-- `light:submit` for form submits
-- `light:bind` for text updates
-- `light:html` for HTML updates
-- `#[Layout('...')]` support for layout selection
-- default fallback layout support
-- JSON-based request handling
-- frontend DOM patching for fast updates
-- publishable config
-- publishable JavaScript runtime
-- install command for setup
+## Directives
 
-## Important notes
+### Server directives
 
-- No component is created automatically.
-- You create pages/components only when you run the command.
-- Layout name `app` resolves to `resources/views/layouts/app.blade.php`.
-- Dotted layout names like `components.layout.admin` also work.
-- If no layout is provided, Lightvel uses the default layout from config.
+- `light:model="field"` → bind input value to server property
+- `light:click="method"` → call server method
+- `light:submit="method"` → submit form to server method
+- `light:bind="field"` → update text content from server state
+- `light:html="field"` → update HTML content from server state
+- `light:navigate` on `<a>` → SPA-like navigation without full refresh
+- `light:error="field"` → render first validation error for field
+- `light:error-message="Text"` → custom fallback message
 
-## Example workflow
+### Client directives
 
-1. Run `php artisan lightvel:layout app`
-2. Run `php artisan make:lightvel pages::app.home`
-3. Edit the generated page
-4. Use `light:model`, `light:click`, and `light:submit`
-5. Keep your actions inside the page class
+- `light:js:init="{...}"` → initialize client state
+- `light:js:model="field"` → bind input to client state
+- `light:js:bind="field"` → bind text to client state
+- `light:js:html="field"` → bind HTML to client state
+- `light:js:click="action(...)"` → call client action
+- `light:js:submit="action(...)"` → call client action on submit
+- `light:js:show="expr"` → show/hide based on expression
+- `light:js:class="{'class-name': expr}"` → conditional class toggling
+- `light:js:rules="required|min:3"` → client-side validation rules
 
-## Install command publishes
+---
 
-- config/lightvel.php
-- Lightvel JavaScript runtime
+## Built-in Client Actions
 
-## Packagist publishing
+`light:js:click` supports these built-ins:
 
-After the package is ready:
+- `toggle(field)`
+- `inc(field, step)`
+- `dec(field, step)`
 
-1. push it to GitHub
-2. tag a release
-3. submit it to Packagist
-4. users can install it with `composer require lightvel/lightvel`
+Example:
 
-## Versioning idea
+```blade
+<div light:js:init="{'count': 0, 'open': false}">
+    <button light:js:click="dec(count, 5)">-5</button>
+    <span light:js:bind="count"></span>
+    <button light:js:click="inc(count, 5)">+5</button>
 
-Keep the first public release simple:
+    <button light:js:click="toggle(open)">Toggle</button>
+    <div light:js:show="open">Visible when open is true</div>
+</div>
+```
 
-- core reactive page support
-- layout support
-- commands
-- runtime JS
-- config file
+---
 
-Later you can add:
+## Validation
 
-- validation helpers
-- exception handling
-- events
-- file upload support
-- pagination
-- JS plugins
+Use Laravel-style rules on component:
+
+```php
+protected $rules = [
+    'name' => 'required|min:3',
+    'email' => 'required|email',
+];
+```
+
+Run on action:
+
+```php
+public function save()
+{
+    $this->validate();
+}
+```
+
+Blade usage:
+
+```blade
+<input light:model="name" light:js:rules="required|min:3">
+<span light:error="name"></span>
+```
+
+Validation runs in two layers:
+
+1. Client-side (fast block before request)
+2. Server-side (authoritative Laravel validation)
+
+---
+
+## Navigation
+
+Use `light:navigate` on internal links:
+
+```blade
+<a href="/" light:navigate>Home</a>
+<a href="/about" light:navigate>About</a>
+```
+
+Features:
+
+- no full page reload
+- browser history support (`back`/`forward`)
+- top progress bar
+
+Progress bar color is configurable:
+
+```env
+LIGHTVEL_PROGRESS_BAR_COLOR="#22c55e"
+```
+
+---
+
+## Configuration
+
+`config/lightvel.php`:
+
+- `default_layout` → fallback layout name
+- `layout_folder` → layout folder under `resources/views`
+- `view_root` → optional subfolder under `resources/views` for generated pages
+- `script_path` → runtime JS path fallback
+- `progress_bar_color` → navigation progress bar color
+
+---
+
+## Common Troubleshooting
+
+### 405 Method Not Allowed on `light:click`
+
+Route must allow POST:
+
+```php
+Route::match(['GET', 'POST'], '/your-page', fn () => view('...'));
+```
+
+### Action not firing
+
+Check layout has:
+
+- `<meta name="csrf-token" content="{{ csrf_token() }}">`
+- `@lightScripts`
+
+### Stale behavior after package update
+
+Run:
+
+```bash
+php artisan optimize:clear
+```
+
+---
+
+## Notes
+
+- Recommended page generation command is `php artisan make:lightvel pages::home`.
