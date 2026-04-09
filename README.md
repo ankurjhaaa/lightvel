@@ -9,6 +9,16 @@ It is made for developers who want:
 - fast UI updates
 - easy command-based file generation
 
+## Author
+
+- Ankur Jha
+- GitHub: https://github.com/ankurjhaaa
+
+## License
+
+This package is open-sourced software licensed under the MIT license.
+See [LICENSE](LICENSE).
+
 ## Install
 
 ```bash

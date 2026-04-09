@@ -153,7 +153,11 @@
             try {
                 let initData = Function('"use strict"; return (' + raw + ')')();
                 if (typeof initData === 'object' && initData !== null) {
-                    Object.assign(api.state, initData);
+                    Object.entries(initData).forEach(([key, value]) => {
+                        if (!Object.prototype.hasOwnProperty.call(api.state, key)) {
+                            api.state[key] = value;
+                        }
+                    });
                 }
             } catch (_) {
                 console.warn('Failed to parse light:js:init:', raw);

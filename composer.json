@@ -1,9 +1,21 @@
 {
   "name": "lightvel/lightvel",
   "description": "Lightweight reactive Laravel package inspired by Livewire",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "type": "library",
   "license": "MIT",
+  "authors": [
+    {
+      "name": "Ankur Jha",
+      "email": "ankurjhaaa@gmail.com",
+      "role": "Developer"
+    }
+  ],
+  "homepage": "https://github.com/ankurjhaaa/lightvel",
+  "support": {
+    "issues": "https://github.com/ankurjhaaa/lightvel/issues",
+    "source": "https://github.com/ankurjhaaa/lightvel"
+  },
   "autoload": {
     "psr-4": {
       "Lightvel\\": "src/"
