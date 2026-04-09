@@ -372,6 +372,19 @@
 
     function collect(scope = document) {
         let values = {};
+        let root = document.querySelector('[data-light-root]');
+
+        if (root) {
+            let rawState = root.getAttribute('data-light-state');
+            if (rawState) {
+                try {
+                    values = { ...JSON.parse(rawState) };
+                } catch (_) {
+                    values = {};
+                }
+            }
+        }
+
         scope.querySelectorAll('[data-light-model]').forEach((el) => {
             values[el.dataset.lightModel] = el.value ?? '';
         });

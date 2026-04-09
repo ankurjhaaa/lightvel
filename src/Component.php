@@ -29,6 +29,11 @@ class Component
         return $this->getRules();
     }
 
+    public function stateForClient(): array
+    {
+        return $this->getValidationData();
+    }
+
     protected function getMessages(): array
     {
         if (property_exists($this, 'messages')) {

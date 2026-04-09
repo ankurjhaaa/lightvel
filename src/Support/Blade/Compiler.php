@@ -60,8 +60,10 @@ class Compiler
 
             \$__rules = \$__lv->rulesForClient();
             \$__rulesAttr = empty(\$__rules) ? '' : ' data-light-rules=\"' . htmlspecialchars(json_encode(\$__rules), ENT_QUOTES, 'UTF-8') . '\"';
+            \$__state = \$__lv->stateForClient();
+            \$__stateAttr = empty(\$__state) ? '' : ' data-light-state=\"' . htmlspecialchars(json_encode(\$__state), ENT_QUOTES, 'UTF-8') . '\"';
 
-            \$__dom = '<div data-light-root' . \$__rulesAttr . '>' . \$__content . '</div>';
+            \$__dom = '<div data-light-root' . \$__rulesAttr . \$__stateAttr . '>' . \$__content . '</div>';
 
             if (request()->header('X-Light')) {
                 \$__payload = is_array(\$__result) ? \$__result : [];
