@@ -112,6 +112,10 @@
         if (!key) return;
 
         document.querySelectorAll(`[data-light-js-model="${key}"]`).forEach((el) => {
+            if (el.hasAttribute('data-light-model')) {
+                return;
+            }
+
             if (el.value !== api.state[key]) {
                 el.value = api.state[key] ?? '';
             }
@@ -167,6 +171,11 @@
         scope.querySelectorAll('[data-light-js-model]').forEach((el) => {
             let key = el.dataset.lightJsModel;
             if (!key) return;
+
+            if (el.hasAttribute('data-light-model')) {
+                api.state[key] = getElementValue(el);
+                return;
+            }
 
             if (api.state[key] === undefined) {
                 api.state[key] = getElementValue(el);
