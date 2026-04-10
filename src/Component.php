@@ -10,6 +10,48 @@ use Illuminate\Validation\ValidationException;
 class Component
 {
     protected ?ViewErrorBag $errorBag = null;
+    protected array $lightState = [];
+
+    protected function bootLightvel(): void
+    {
+        if (method_exists($this, 'lightvel')) {
+            $result = $this->lightvel();
+
+            if (is_array($result)) {
+                $this->mergeResponseData($result);
+            }
+        }
+    }
+
+    protected function mergeResponseData(array $result): void
+    {
+        if (isset($result['data']) && is_array($result['data'])) {
+            $this->setState($result['data']);
+            return;
+        }
+
+        $this->setState($result);
+    }
+
+    public function setState(array $data): void
+    {
+        $this->lightState = array_merge($this->lightState, $data);
+
+        foreach ($data as $key => $value) {
+            if (property_exists($this, $key)) {
+                $this->$key = $value;
+            }
+        }
+    }
+
+    public function state(?string $key = null, mixed $default = null): mixed
+    {
+        if ($key === null) {
+            return $this->lightState;
+        }
+
+        return $this->lightState[$key] ?? $default;
+    }
 
     protected function getRules(): array
     {
@@ -54,9 +96,13 @@ class Component
 
     protected function getValidationData(): array
     {
+        if (!empty($this->lightState)) {
+            return $this->lightState;
+        }
+
         $data = get_object_vars($this);
 
-        foreach (['errorBag', 'rules', 'messages', 'attributes'] as $key) {
+        foreach (['errorBag', 'rules', 'messages', 'attributes', 'lightState'] as $key) {
             unset($data[$key]);
         }
 
@@ -130,15 +176,13 @@ class Component
 
     public function run()
     {
-        if (!request()->header('X-Light')) {
-            if (method_exists($this, 'lightvel')) {
-                $this->lightvel();
-            }
+        $this->bootLightvel();
 
+        if (!request()->header('X-Light')) {
             return get_object_vars($this);
         }
 
-        $original = get_object_vars($this);
+        $original = $this->stateForClient();
 
         $payload = request()->json()->all();
         $action = $payload['action'] ?? null;
@@ -150,11 +194,7 @@ class Component
             if (array_is_list($params)) {
                 $actionArgs = $params;
             } else {
-                foreach ($params as $k => $v) {
-                    if (property_exists($this, $k)) {
-                        $this->$k = $v;
-                    }
-                }
+                $this->setState($params);
                 $actionArgs = [];
             }
         }
@@ -166,7 +206,11 @@ class Component
                 && !in_array($action, ['run', 'lightvel'], true)
                 && method_exists($this, $action)
             ) {
-                $this->$action(...$actionArgs);
+                $result = $this->$action(...$actionArgs);
+
+                if (is_array($result)) {
+                    $this->mergeResponseData($result);
+                }
             }
         } catch (ValidationException $e) {
             $errors = $this->getErrorBag()->getBag('default')->toArray();
@@ -177,7 +221,7 @@ class Component
             ];
         }
 
-        $updated = get_object_vars($this);
+        $updated = $this->stateForClient();
 
         $diff = [];
         foreach ($updated as $k => $v) {

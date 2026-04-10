@@ -65,15 +65,24 @@
         let api = window.Lightvel.js || {};
 
         api.state = api.state || {};
+        api.consts = api.consts || {};
         api.actions = api.actions || {};
         api.errors = api.errors || {};
 
         api.set = api.set || function (key, value) {
+            if (Object.prototype.hasOwnProperty.call(api.consts, key)) {
+                return;
+            }
+
             api.state[key] = value;
-            syncJsBindings(key);
+            syncBindings(key);
         };
 
         api.get = api.get || function (key) {
+            if (Object.prototype.hasOwnProperty.call(api.consts, key)) {
+                return api.consts[key];
+            }
+
             return api.state[key];
         };
 
@@ -154,15 +163,116 @@
             let expr = el.getAttribute('data-light-js-class');
             applyConditionalClasses(el, expr, api.state);
         });
+
+        document.querySelectorAll('[data-light-class]').forEach((el) => {
+            let expr = el.getAttribute('data-light-class');
+            if (!expr) return;
+
+            let classObj = parseClassExpression(expr);
+            let evaluated = {};
+
+            Object.entries(classObj).forEach(([className, condition]) => {
+                if (typeof condition === 'string') {
+                    evaluated[className] = !!evaluateLightExpression(condition, api.state);
+                } else if (typeof condition === 'boolean') {
+                    evaluated[className] = condition;
+                }
+            });
+
+            Object.entries(evaluated).forEach(([className, shouldAdd]) => {
+                if (shouldAdd) {
+                    el.classList.add(className);
+                } else {
+                    el.classList.remove(className);
+                }
+            });
+        });
     }
 
     function syncAllJsBindings() {
-        let api = getJsApi();
-        Object.keys(api.state).forEach((key) => syncJsBindings(key));
+        syncBindings();
     }
 
     function initJsState(scope = document) {
         let api = getJsApi();
+
+        scope.querySelectorAll('[data-light-server-state]').forEach((el) => {
+            let raw = el.getAttribute('data-light-server-state');
+            if (!raw) return;
+
+            try {
+                let serverState = JSON.parse(raw);
+                if (typeof serverState === 'object' && serverState !== null) {
+                    Object.entries(serverState).forEach(([key, value]) => {
+                        if (api.state[key] === undefined) {
+                            api.state[key] = value;
+                        }
+                    });
+                }
+            } catch (_) {
+                // ignore invalid server state
+            }
+        });
+
+        scope.querySelectorAll('[data-light-state]').forEach((el) => {
+            if (el.hasAttribute('data-light-server-state')) {
+                return;
+            }
+
+            let rawState = el.getAttribute('data-light-state');
+            if (!rawState) return;
+
+            if (rawState.includes('=') || rawState.includes(',')) {
+                return;
+            }
+
+            try {
+                let serverState = JSON.parse(rawState);
+                if (typeof serverState === 'object' && serverState !== null) {
+                    Object.entries(serverState).forEach(([key, value]) => {
+                        if (api.state[key] === undefined) {
+                            api.state[key] = value;
+                        }
+                    });
+                }
+            } catch (_) {
+                // ignore invalid state json
+            }
+        });
+
+        scope.querySelectorAll('[data-light-state], [data-light-variable]').forEach((el) => {
+            let raw = el.getAttribute('data-light-state') || el.getAttribute('data-light-variable');
+            if (!raw) return;
+
+            let vars = parseLightAssignments(raw);
+            Object.entries(vars).forEach(([key, value]) => {
+                if (api.state[key] === undefined) {
+                    api.state[key] = value;
+                }
+            });
+        });
+
+        scope.querySelectorAll('[data-light-variable]').forEach((el) => {
+            let raw = el.getAttribute('data-light-variable');
+            if (!raw) return;
+
+            let vars = parseLightAssignments(raw);
+            Object.entries(vars).forEach(([key, value]) => {
+                if (!Object.prototype.hasOwnProperty.call(api.consts, key) && api.state[key] === undefined) {
+                    api.state[key] = value;
+                }
+            });
+        });
+
+        scope.querySelectorAll('[data-light-const]').forEach((el) => {
+            let raw = el.getAttribute('data-light-const');
+            if (!raw) return;
+
+            let vars = parseLightAssignments(raw);
+            Object.entries(vars).forEach(([key, value]) => {
+                api.consts[key] = value;
+            });
+        });
 
         // Initialize from light:js:init directives
         scope.querySelectorAll('[data-light-js-init]').forEach((el) => {
@@ -206,13 +316,13 @@
             }
         });
 
-        syncAllJsBindings();
+        syncBindings();
     }
 
     function getRootRules() {
         let root = document.querySelector('[data-light-root]');
         if (!root) return {};
-        let raw = root.getAttribute('data-light-rules');
+        let raw = root.getAttribute('data-light-server-rules');
         if (!raw) return {};
 
         try {
@@ -251,6 +361,10 @@
     }
 
     function getElementRules(el, rootRules) {
+        if (el.dataset.lightRules) {
+            return normalizeRules(el.dataset.lightRules);
+        }
+
         if (el.dataset.lightJsRules) {
             return normalizeRules(el.dataset.lightJsRules);
         }
@@ -383,7 +497,7 @@
         let rootRules = getRootRules();
         let errors = {};
 
-        scope.querySelectorAll('[data-light-js-model], [data-light-model], [data-light-js-rules]').forEach((el) => {
+        scope.querySelectorAll('[data-light-js-model], [data-light-model], [data-light-js-rules], [data-light-rules]').forEach((el) => {
             let result = validateElement(el, rootRules);
             if (!result || !result.errors.length) return;
             errors[result.field] = result.errors;
@@ -399,19 +513,7 @@
     }
 
     function collect(scope = document) {
-        let values = {};
-        let root = document.querySelector('[data-light-root]');
-
-        if (root) {
-            let rawState = root.getAttribute('data-light-state');
-            if (rawState) {
-                try {
-                    values = { ...JSON.parse(rawState) };
-                } catch (_) {
-                    values = {};
-                }
-            }
-        }
+        let values = { ...getJsApi().state };
 
         scope.querySelectorAll('[data-light-model]').forEach((el) => {
             values[el.dataset.lightModel] = el.value ?? '';
@@ -488,34 +590,224 @@
         });
     }
 
-    function runBuiltinJsAction(action, args, api) {
-        let name = (action || '').trim();
-        let key = stripQuotes(args[0] || '');
+    function evaluateLightExpression(expr, scopeState = null, extraScope = null) {
+        let api = getJsApi();
+        let state = Object.assign({}, api.consts || {}, scopeState || api.state || {});
+        let extras = extraScope || {};
 
-        if (!name || !key) return false;
+        try {
+            return Function('state', 'scope', 'with(state){ with(scope){ return (' + expr + '); } }')(state, extras);
+        } catch (_) {
+            try {
+                if (Object.prototype.hasOwnProperty.call(state, expr)) {
+                    return state[expr];
+                }
 
-        if (name === 'inc') {
-            let step = Number(stripQuotes(args[1] ?? 1)) || 1;
-            let current = Number(api.get(key) || 0);
-            api.set(key, current + step);
-            return true;
+                if (Object.prototype.hasOwnProperty.call(api.consts, expr)) {
+                    return api.consts[expr];
+                }
+            } catch (_) {
+                // ignore
+            }
+
+            return undefined;
+        }
+    }
+
+    function parseLightAssignments(raw) {
+        let out = {};
+
+        if (!raw || !raw.trim()) {
+            return out;
         }
 
-        if (name === 'dec') {
-            let step = Number(stripQuotes(args[1] ?? 1)) || 1;
-            let current = Number(api.get(key) || 0);
-            api.set(key, current - step);
-            return true;
+        raw.split(',').map((part) => part.trim()).filter(Boolean).forEach((part) => {
+            let index = part.indexOf('=');
+
+            if (index === -1) {
+                out[part] = true;
+                return;
+            }
+
+            let key = part.slice(0, index).trim();
+            let valueExpr = part.slice(index + 1).trim();
+            let evaluated = evaluateLightExpression(valueExpr, getJsApi().state, out);
+            out[key] = evaluated;
+        });
+
+        return out;
+    }
+
+    function syncBindings(key) {
+        if (key) {
+            syncJsBindings(key);
+        } else {
+            let api = getJsApi();
+            Object.keys(api.state).forEach((stateKey) => syncJsBindings(stateKey));
         }
 
-        if (name === 'toggle') {
-            let hasState = Object.prototype.hasOwnProperty.call(api.state, key);
-            let current = hasState ? Boolean(api.state[key]) : false;
-            api.set(key, !Boolean(current));
-            return true;
-        }
+        syncLightTextBindings(key);
+        syncLightConditionals();
+        renderLightForTemplates();
+    }
 
+    function syncLightTextBindings(key) {
+        let api = getJsApi();
+
+        document.querySelectorAll('[data-light-text]').forEach((el) => {
+            let expr = el.getAttribute('data-light-text');
+            if (!expr) return;
+
+            let value = evaluateLightExpression(expr, api.state);
+            el.innerText = value == null ? '' : String(value);
+        });
+
+        if (!key) {
+            return;
+        }
+    }
+
+    function syncLightConditionals() {
+        let api = getJsApi();
+
+        document.querySelectorAll('[data-light-show], [data-light-if]').forEach((el) => {
+            let expr = el.getAttribute('data-light-show') || el.getAttribute('data-light-if');
+            if (!expr) return;
+
+            let visible = !!evaluateLightExpression(expr, api.state);
+            let display =
+                el.getAttribute('data-light-display') ||
+                (el.classList.contains('inline-flex') ? 'inline-flex' : '') ||
+                (el.classList.contains('flex') ? 'flex' : '') ||
+                (el.classList.contains('inline-grid') ? 'inline-grid' : '') ||
+                (el.classList.contains('grid') ? 'grid' : '') ||
+                (el.classList.contains('inline-block') ? 'inline-block' : '') ||
+                (el.classList.contains('block') ? 'block' : '') ||
+                'block';
+
+            el.style.display = visible ? display : 'none';
+        });
+    }
+
+    function applyScopedBindings(root, scopeState) {
+        if (!root || !root.querySelectorAll) return;
+
+        root.querySelectorAll('[data-light-text]').forEach((el) => {
+            let expr = el.getAttribute('data-light-text');
+            if (!expr) return;
+
+            let value = evaluateLightExpression(expr, scopeState);
+            el.innerText = value == null ? '' : String(value);
+        });
+
+        root.querySelectorAll('[data-light-show], [data-light-if]').forEach((el) => {
+            let expr = el.getAttribute('data-light-show') || el.getAttribute('data-light-if');
+            if (!expr) return;
+
+            let visible = !!evaluateLightExpression(expr, scopeState);
+            let display =
+                el.getAttribute('data-light-display') ||
+                (el.classList.contains('inline-flex') ? 'inline-flex' : '') ||
+                (el.classList.contains('flex') ? 'flex' : '') ||
+                (el.classList.contains('inline-grid') ? 'inline-grid' : '') ||
+                (el.classList.contains('grid') ? 'grid' : '') ||
+                (el.classList.contains('inline-block') ? 'inline-block' : '') ||
+                (el.classList.contains('block') ? 'block' : '') ||
+                'block';
+
+            el.style.display = visible ? display : 'none';
+        });
+
+        root.querySelectorAll('[data-light-class]').forEach((el) => {
+            let expr = el.getAttribute('data-light-class');
+            if (!expr) return;
+
+            let classObj = parseClassExpression(expr);
+            Object.entries(classObj).forEach(([className, condition]) => {
+                let shouldAdd = false;
+
+                if (typeof condition === 'string') {
+                    shouldAdd = !!evaluateLightExpression(condition, scopeState);
+                } else if (typeof condition === 'boolean') {
+                    shouldAdd = condition;
+                }
+
+                if (shouldAdd) {
+                    el.classList.add(className);
+                } else {
+                    el.classList.remove(className);
+                }
+            });
+        });
+    }
+
+    function renderLightForTemplates() {
+        let api = getJsApi();
+
+        document.querySelectorAll('[data-light-for]').forEach((template) => {
+            let expr = template.getAttribute('data-light-for') || '';
+            let match = expr.match(/^\s*([A-Za-z_$][\w$]*)\s+in\s+(.+)\s*$/);
+            if (!match || !template.parentNode) return;
+
+            let itemName = match[1];
+            let sourceExpr = match[2];
+            let list = evaluateLightExpression(sourceExpr, api.state);
+
+            if (!Array.isArray(list)) {
+                list = [];
+            }
+
+            if (template._lightRenderedNodes && template._lightRenderedNodes.length) {
+                template._lightRenderedNodes.forEach((node) => node.remove());
+            }
+
+            let html = template.innerHTML;
+            let renderedFragments = list.map((item, index) => {
+                let scope = Object.assign({}, api.consts || {}, api.state || {}, {
+                    [itemName]: item,
+                    index,
+                    $index: index,
+                });
+
+                let fragment = document.createRange().createContextualFragment(html);
+                applyScopedBindings(fragment, scope);
+                return fragment;
+            });
+
+            let wrapper = document.createDocumentFragment();
+            let nodes = [];
+
+            renderedFragments.forEach((fragment) => {
+                let childNodes = Array.from(fragment.childNodes);
+                childNodes.forEach((node) => wrapper.appendChild(node));
+                nodes.push(...childNodes);
+            });
+
+            template.after(wrapper);
+            template._lightRenderedNodes = nodes;
+        });
+    }
+
+    function runBuiltinJsAction() {
         return false;
+    }
+
+    function applyFunctionAssignments(raw, api) {
+        if (!raw) return;
+
+        let expr = raw.trim();
+
+        let open = expr.indexOf('(');
+        let close = expr.lastIndexOf(')');
+        if (open !== -1 && close === expr.length - 1) {
+            expr = expr.slice(open + 1, close).trim();
+        }
+
+        let updates = parseLightAssignments(expr);
+
+        Object.entries(updates).forEach(([key, value]) => {
+            api.set(key, value);
+        });
     }
 
     function call(action, params = {}) {
@@ -567,11 +859,29 @@
             return;
         }
 
-        Object.entries(data).forEach(([k, v]) => {
-            document.querySelectorAll(`[data-light-model="${k}"]`).forEach((el) => (el.value = v ?? ''));
-            document.querySelectorAll(`[data-light-bind="${k}"]`).forEach((el) => (el.innerText = v ?? ''));
-            document.querySelectorAll(`[data-light-html="${k}"]`).forEach((el) => (el.innerHTML = v ?? ''));
+        let api = getJsApi();
+        let payload = data || {};
+
+        if (
+            payload.data
+            && typeof payload.data === 'object'
+            && !Array.isArray(payload.data)
+        ) {
+            payload = {
+                ...payload,
+                ...payload.data,
+            };
+            delete payload.data;
+        }
+
+        Object.entries(payload).forEach(([k, v]) => {
+            if (k.startsWith('__')) {
+                return;
+            }
+            api.state[k] = v;
         });
+
+        syncBindings();
     }
 
     function isSameOrigin(url) {
@@ -658,6 +968,7 @@
         let parsed = parse(el.dataset.lightClick);
         let state = collect();
 
+
         if (parsed.args.length) {
             call(parsed.action, parsed.args);
         } else {
@@ -689,6 +1000,16 @@
             set: api.set,
             get: api.get,
         });
+    });
+
+    document.addEventListener('click', (e) => {
+        let el = e.target.closest('[data-light-function]');
+        if (!el) return;
+
+        let api = getJsApi();
+
+        applyFunctionAssignments(el.dataset.lightFunction, api);
+        syncBindings();
     });
 
     document.addEventListener('click', (e) => {
@@ -758,7 +1079,7 @@
 
         let api = getJsApi();
         api.state[field] = getElementValue(el);
-        syncJsBindings(field);
+        syncBindings(field);
 
         let result = validateElement(el, getRootRules());
         if (result) {
@@ -775,7 +1096,7 @@
 
         let api = getJsApi();
         api.state[field] = getElementValue(el);
-        syncJsBindings(field);
+        syncBindings(field);
 
         let result = validateElement(el, getRootRules());
         if (result) {

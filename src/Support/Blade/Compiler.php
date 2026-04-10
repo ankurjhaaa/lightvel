@@ -55,19 +55,20 @@ class Compiler
 
         $view = str_replace($scriptBlock[0], $boot, $view);
 
+        $view = preg_replace('/\{\{\s*echo\.([A-Za-z_][A-Za-z0-9_\.\->]*)\s*\}\}/', '<span data-light-text="$1"></span>', $view);
+
         $view .= "<?php
             \$__content = ob_get_clean();
 
             \$__rules = \$__lv->rulesForClient();
-            \$__rulesAttr = empty(\$__rules) ? '' : ' data-light-rules=\"' . htmlspecialchars(json_encode(\$__rules), ENT_QUOTES, 'UTF-8') . '\"';
+                \$__rulesAttr = empty(\$__rules) ? '' : ' data-light-server-rules=\"' . htmlspecialchars(json_encode(\$__rules), ENT_QUOTES, 'UTF-8') . '\"';
             \$__state = \$__lv->stateForClient();
-            \$__stateAttr = empty(\$__state) ? '' : ' data-light-state=\"' . htmlspecialchars(json_encode(\$__state), ENT_QUOTES, 'UTF-8') . '\"';
+            \$__stateAttr = empty(\$__state) ? '' : ' data-light-server-state=\"' . htmlspecialchars(json_encode(\$__state), ENT_QUOTES, 'UTF-8') . '\"';
 
             \$__dom = '<div data-light-root' . \$__rulesAttr . \$__stateAttr . '>' . \$__content . '</div>';
 
             if (request()->header('X-Light')) {
                 \$__payload = is_array(\$__result) ? \$__result : [];
-                \$__payload['__lightvel_dom'] = \$__dom;
                 header('Content-Type: application/json');
                 echo json_encode(\$__payload);
                 return;
