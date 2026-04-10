@@ -37,16 +37,21 @@ class RouteServiceProvider extends ServiceProvider
                 'params' => $request->input('params', []),
             ];
 
-            $query['_light_payload'] = base64_encode(json_encode($payload));
+            $server = $request->server->all();
+            $server['REQUEST_METHOD'] = 'POST';
+            $server['CONTENT_TYPE'] = 'application/json';
+            $server['HTTP_ACCEPT'] = 'application/json';
+            $server['HTTP_X_LIGHT'] = 'true';
+            $server['HTTP_X_LIGHT_FORWARDED'] = 'true';
 
             $forward = Request::create(
-                $path . '?' . http_build_query($query),
-                'GET',
+                $path . (empty($query) ? '' : '?' . http_build_query($query)),
+                'POST',
                 [],
                 $request->cookies->all(),
                 [],
-                $request->server->all(),
-                null
+                $server,
+                json_encode($payload)
             );
 
             $forward->headers->set('X-Light', 'true');
@@ -54,6 +59,29 @@ class RouteServiceProvider extends ServiceProvider
             $forward->headers->set('Accept', 'application/json');
 
             $response = app()->handle($forward);
+
+            if (in_array($response->getStatusCode(), [404, 405], true)) {
+                $query['_light_payload'] = base64_encode(json_encode($payload));
+
+                $server['REQUEST_METHOD'] = 'GET';
+                unset($server['CONTENT_TYPE']);
+
+                $fallback = Request::create(
+                    $path . '?' . http_build_query($query),
+                    'GET',
+                    [],
+                    $request->cookies->all(),
+                    [],
+                    $server,
+                    null
+                );
+
+                $fallback->headers->set('X-Light', 'true');
+                $fallback->headers->set('X-Light-Forwarded', 'true');
+                $fallback->headers->set('Accept', 'application/json');
+
+                $response = app()->handle($fallback);
+            }
 
             return $response;
         })->name('lightvel.message');

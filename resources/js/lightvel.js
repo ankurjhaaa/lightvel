@@ -857,6 +857,10 @@
             let sourceExpr = match[2];
             let list = evaluateLightExpression(sourceExpr, api.state);
 
+            if (list && typeof list === 'object' && !Array.isArray(list)) {
+                list = Object.values(list);
+            }
+
             if (!Array.isArray(list)) {
                 list = [];
             }
