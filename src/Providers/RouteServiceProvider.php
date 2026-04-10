@@ -45,6 +45,7 @@ class RouteServiceProvider extends ServiceProvider
                 [],
                 $request->cookies->all(),
                 [],
+                $request->server->all(),
                 null
             );
 
