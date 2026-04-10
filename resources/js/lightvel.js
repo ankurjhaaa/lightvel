@@ -189,10 +189,6 @@
         });
     }
 
-    function syncAllJsBindings() {
-        syncBindings();
-    }
-
     function initJsState(scope = document) {
         let api = getJsApi();
 
@@ -535,15 +531,6 @@
         }
     }
 
-    function stripQuotes(value) {
-        if (typeof value !== 'string') return value;
-        let s = value.trim();
-        if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
-            return s.slice(1, -1);
-        }
-        return s;
-    }
-
     function evalJsExpr(expr, state) {
         try {
             let code = expr.replace(/\b([a-zA-Z_$][a-zA-Z0-9_$]*)\b/g, function (match) {
@@ -692,6 +679,109 @@
     function applyScopedBindings(root, scopeState) {
         if (!root || !root.querySelectorAll) return;
 
+        function splitCallArgs(rawArgs) {
+            let args = [];
+            let current = '';
+            let depth = 0;
+            let quote = null;
+
+            for (let i = 0; i < rawArgs.length; i++) {
+                let ch = rawArgs[i];
+
+                if (quote) {
+                    current += ch;
+                    if (ch === quote && rawArgs[i - 1] !== '\\') {
+                        quote = null;
+                    }
+                    continue;
+                }
+
+                if (ch === '"' || ch === "'") {
+                    quote = ch;
+                    current += ch;
+                    continue;
+                }
+
+                if (ch === '(' || ch === '[' || ch === '{') {
+                    depth++;
+                    current += ch;
+                    continue;
+                }
+
+                if (ch === ')' || ch === ']' || ch === '}') {
+                    depth = Math.max(0, depth - 1);
+                    current += ch;
+                    continue;
+                }
+
+                if (ch === ',' && depth === 0) {
+                    if (current.trim() !== '') {
+                        args.push(current.trim());
+                    }
+                    current = '';
+                    continue;
+                }
+
+                current += ch;
+            }
+
+            if (current.trim() !== '') {
+                args.push(current.trim());
+            }
+
+            return args;
+        }
+
+        function resolveScopedAction(rawCall) {
+            if (!rawCall) return rawCall;
+
+            let match = rawCall.trim().match(/^([A-Za-z_$][\w$]*)\((.*)\)$/);
+            if (!match) {
+                return rawCall;
+            }
+
+            let action = match[1];
+            let rawArgs = match[2].trim();
+
+            if (rawArgs === '') {
+                return action;
+            }
+
+            let args = splitCallArgs(rawArgs).map((argExpr) => evaluateLightExpression(argExpr, scopeState));
+            let serialized = args.map((value) => JSON.stringify(value)).join(',');
+
+            return `${action}(${serialized})`;
+        }
+
+        function resolveScopedFunction(rawExpr) {
+            if (!rawExpr) return rawExpr;
+
+            let expr = rawExpr.trim();
+            let open = expr.indexOf('(');
+            let close = expr.lastIndexOf(')');
+
+            if (open !== -1 && close === expr.length - 1) {
+                expr = expr.slice(open + 1, close).trim();
+            }
+
+            let parts = splitCallArgs(expr);
+
+            let resolved = parts.map((part) => {
+                let eq = part.indexOf('=');
+                if (eq === -1) {
+                    return part;
+                }
+
+                let key = part.slice(0, eq).trim();
+                let rhs = part.slice(eq + 1).trim();
+                let value = evaluateLightExpression(rhs, scopeState);
+
+                return `${key}=${JSON.stringify(value)}`;
+            });
+
+            return resolved.join(',');
+        }
+
         root.querySelectorAll('[data-light-text]').forEach((el) => {
             let expr = el.getAttribute('data-light-text');
             if (!expr) return;
@@ -739,15 +829,29 @@
                 }
             });
         });
+
+        root.querySelectorAll('[data-light-click]').forEach((el) => {
+            let action = el.getAttribute('data-light-click');
+            if (!action) return;
+
+            el.setAttribute('data-light-click', resolveScopedAction(action));
+        });
+
+        root.querySelectorAll('[data-light-function]').forEach((el) => {
+            let expr = el.getAttribute('data-light-function');
+            if (!expr) return;
+
+            el.setAttribute('data-light-function', resolveScopedFunction(expr));
+        });
     }
 
     function renderLightForTemplates() {
         let api = getJsApi();
 
-        document.querySelectorAll('[data-light-for]').forEach((template) => {
-            let expr = template.getAttribute('data-light-for') || '';
+        document.querySelectorAll('[data-light-for]').forEach((node) => {
+            let expr = node.getAttribute('data-light-for') || '';
             let match = expr.match(/^\s*([A-Za-z_$][\w$]*)\s+in\s+(.+)\s*$/);
-            if (!match || !template.parentNode) return;
+            if (!match || !node.parentNode) return;
 
             let itemName = match[1];
             let sourceExpr = match[2];
@@ -757,11 +861,24 @@
                 list = [];
             }
 
-            if (template._lightRenderedNodes && template._lightRenderedNodes.length) {
-                template._lightRenderedNodes.forEach((node) => node.remove());
+            if (node._lightRenderedNodes && node._lightRenderedNodes.length) {
+                node._lightRenderedNodes.forEach((renderedNode) => renderedNode.remove());
             }
 
-            let html = template.innerHTML;
+            let isTemplate = node.tagName === 'TEMPLATE';
+
+            if (!isTemplate) {
+                node.style.display = 'none';
+            }
+
+            if (!node._lightForSourceHtml) {
+                node._lightForSourceHtml = isTemplate
+                    ? node.innerHTML
+                    : node.outerHTML.replace(/\sdata-light-for="[^"]*"/g, '');
+            }
+
+            let html = node._lightForSourceHtml;
+
             let renderedFragments = list.map((item, index) => {
                 let scope = Object.assign({}, api.consts || {}, api.state || {}, {
                     [itemName]: item,
@@ -783,13 +900,9 @@
                 nodes.push(...childNodes);
             });
 
-            template.after(wrapper);
-            template._lightRenderedNodes = nodes;
+            node.after(wrapper);
+            node._lightRenderedNodes = nodes;
         });
-    }
-
-    function runBuiltinJsAction() {
-        return false;
     }
 
     function applyFunctionAssignments(raw, api) {
@@ -811,14 +924,21 @@
     }
 
     function call(action, params = {}) {
-        fetch(window.location.href, {
+        let csrfToken = document.querySelector('meta[name=csrf-token]')?.content || '';
+        let endpoint = getConfig().messageEndpoint || '/lightvel/message';
+
+        fetch(endpoint, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content,
+                'X-CSRF-TOKEN': csrfToken,
                 'X-Light': 'true',
             },
-            body: JSON.stringify({ action, params }),
+            body: JSON.stringify({
+                url: window.location.href,
+                action,
+                params,
+            }),
         })
             .then((r) => {
                 if (!r.ok) {
@@ -838,14 +958,27 @@
     }
 
     function update(data) {
-        if (data.__lightvel_errors !== undefined) {
-            setErrors(data.__lightvel_errors || {});
-            delete data.__lightvel_errors;
+        let api = getJsApi();
+        let payload = data || {};
+
+        if (payload.__lightvel_errors !== undefined) {
+            setErrors(payload.__lightvel_errors || {});
+            delete payload.__lightvel_errors;
+        } else if (payload.errors && typeof payload.errors === 'object') {
+            setErrors(payload.errors || {});
         }
 
-        if (data.__lightvel_dom) {
+        if (Object.prototype.hasOwnProperty.call(payload, 'message')) {
+            api.state.message = payload.message ?? '';
+        }
+
+        if (Object.prototype.hasOwnProperty.call(payload, 'status')) {
+            api.state.status = payload.status;
+        }
+
+        if (payload.__lightvel_dom) {
             let wrap = document.createElement('div');
-            wrap.innerHTML = data.__lightvel_dom;
+            wrap.innerHTML = payload.__lightvel_dom;
             let nextRoot = wrap.firstElementChild;
             let currentRoot = document.querySelector('[data-light-root]');
 
@@ -858,9 +991,6 @@
 
             return;
         }
-
-        let api = getJsApi();
-        let payload = data || {};
 
         if (
             payload.data
@@ -965,6 +1095,10 @@
         let el = e.target.closest('[data-light-click]');
         if (!el) return;
 
+        if (el.tagName === 'BUTTON' || el.tagName === 'A') {
+            e.preventDefault();
+        }
+
         let parsed = parse(el.dataset.lightClick);
         let state = collect();
 
@@ -980,13 +1114,13 @@
         let el = e.target.closest('[data-light-js-click]');
         if (!el) return;
 
+        if (el.tagName === 'BUTTON' || el.tagName === 'A') {
+            e.preventDefault();
+        }
+
         let parsed = parse(el.dataset.lightJsClick);
         let api = getJsApi();
         let handler = api.actions[parsed.action];
-
-        if (runBuiltinJsAction(parsed.action, parsed.args, api)) {
-            return;
-        }
 
         if (typeof handler !== 'function') {
             console.warn('Lightvel js action not found:', parsed.action);
@@ -1005,6 +1139,10 @@
     document.addEventListener('click', (e) => {
         let el = e.target.closest('[data-light-function]');
         if (!el) return;
+
+        if (el.tagName === 'BUTTON' || el.tagName === 'A') {
+            e.preventDefault();
+        }
 
         let api = getJsApi();
 

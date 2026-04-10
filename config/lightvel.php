@@ -55,4 +55,15 @@ return [
     |
     */
     'progress_bar_color' => env('LIGHTVEL_PROGRESS_BAR_COLOR', '#111827'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Message endpoint
+    |--------------------------------------------------------------------------
+    |
+    | Dedicated endpoint used by the runtime to dispatch component actions.
+    | Keeps page routes simple (GET) while actions are sent through this path.
+    |
+    */
+    'message_endpoint' => env('LIGHTVEL_MESSAGE_ENDPOINT', '/lightvel/message'),
 ];

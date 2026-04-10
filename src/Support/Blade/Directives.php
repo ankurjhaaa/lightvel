@@ -14,14 +14,14 @@ class Directives
     {
         Blade::extend(function ($view) {
             $view = preg_replace('/light:model="([^"]+)"/', 'name="$1" value="<?php echo $$1 ?? \'\' ?>" data-light-model="$1"', $view);
-            $view = preg_replace('/light:click="([^"]+)"/', 'type="button" data-light-click="$1"', $view);
+            $view = preg_replace('/light:click="([^"]+)"/', 'data-light-click="$1"', $view);
             $view = preg_replace('/light:submit="([^"]+)"/', 'data-light-submit="$1"', $view);
             $view = preg_replace('/light:bind="([^"]+)"/', 'data-light-bind="$1"', $view);
 
             $view = preg_replace('/light:state="([^"]+)"/', 'data-light-state="$1"', $view);
             $view = preg_replace('/light:variable="([^"]+)"/', 'data-light-state="$1"', $view);
             $view = preg_replace('/light:const="([^"]+)"/', 'data-light-const="$1"', $view);
-            $view = preg_replace('/light:function="([^"]+)"/', 'type="button" data-light-function="$1"', $view);
+            $view = preg_replace('/light:function="([^"]+)"/', 'data-light-function="$1"', $view);
             $view = preg_replace('/light:text="([^"]+)"/', 'data-light-text="$1"', $view);
             $view = preg_replace('/light:html="([^"]+)"/', 'data-light-html="$1"', $view);
             $view = preg_replace('/light:show="([^"]+)"/', 'data-light-show="$1"', $view);

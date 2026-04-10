@@ -14,8 +14,10 @@ class Assets
             ? $published
             : config('lightvel.script_path', __DIR__ . '/../../resources/js/lightvel.js');
         $progressColor = config('lightvel.progress_bar_color', '#111827');
+        $messageEndpoint = config('lightvel.message_endpoint', '/lightvel/message');
         $boot = 'window.Lightvel = window.Lightvel || {};' .
-            'window.Lightvel.progressBarColor = ' . json_encode($progressColor) . ';';
+            'window.Lightvel.progressBarColor = ' . json_encode($progressColor) . ';' .
+            'window.Lightvel.messageEndpoint = ' . json_encode($messageEndpoint) . ';';
 
         return '<script>' . $boot . '</script>' . PHP_EOL
             . '<script>' . PHP_EOL . file_get_contents($path) . PHP_EOL . '</script>';

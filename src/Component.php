@@ -2,6 +2,7 @@
 
 namespace Lightvel;
 
+use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\ViewErrorBag;
@@ -16,11 +17,34 @@ class Component
     {
         if (method_exists($this, 'lightvel')) {
             $result = $this->lightvel();
+            $normalized = $this->normalizeActionResult($result);
 
-            if (is_array($result)) {
-                $this->mergeResponseData($result);
+            if (is_array($normalized)) {
+                $this->mergeResponseData($normalized);
             }
         }
+    }
+
+    protected function normalizeActionResult(mixed $result): ?array
+    {
+        if ($result instanceof JsonResponse) {
+            $data = $result->getData(true);
+            return is_array($data) ? $data : [];
+        }
+
+        if (is_array($result)) {
+            return $result;
+        }
+
+        return null;
+    }
+
+    protected function isEnvelopeResponse(array $result): bool
+    {
+        return array_key_exists('status', $result)
+            || array_key_exists('message', $result)
+            || array_key_exists('data', $result)
+            || array_key_exists('errors', $result);
     }
 
     protected function mergeResponseData(array $result): void
@@ -185,6 +209,23 @@ class Component
         $original = $this->stateForClient();
 
         $payload = request()->json()->all();
+
+        if (!is_array($payload) || empty($payload)) {
+            $payload = request()->all();
+        }
+
+        if (isset($payload['_light_payload']) && is_string($payload['_light_payload'])) {
+            $decodedRaw = base64_decode($payload['_light_payload'], true);
+
+            if (is_string($decodedRaw) && $decodedRaw !== '') {
+                $decoded = json_decode($decodedRaw, true);
+
+                if (is_array($decoded)) {
+                    $payload = $decoded;
+                }
+            }
+        }
+
         $action = $payload['action'] ?? null;
         $params = $payload['params'] ?? [];
 
@@ -207,9 +248,18 @@ class Component
                 && method_exists($this, $action)
             ) {
                 $result = $this->$action(...$actionArgs);
+                $normalized = $this->normalizeActionResult($result);
 
-                if (is_array($result)) {
-                    $this->mergeResponseData($result);
+                if (is_array($normalized)) {
+                    if ($this->isEnvelopeResponse($normalized)) {
+                        if (isset($normalized['data']) && is_array($normalized['data'])) {
+                            $this->setState($normalized['data']);
+                        }
+
+                        return $normalized;
+                    }
+
+                    $this->mergeResponseData($normalized);
                 }
             }
         } catch (ValidationException $e) {
@@ -217,6 +267,9 @@ class Component
             $errors = empty($errors) ? [] : $errors;
 
             return [
+                'status' => false,
+                'message' => 'Validation failed',
+                'errors' => $errors,
                 '__lightvel_errors' => $errors,
             ];
         }
