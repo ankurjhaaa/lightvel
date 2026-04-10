@@ -132,7 +132,22 @@
         document.querySelectorAll(`[data-light-js-show]`).forEach((el) => {
             let expr = el.getAttribute('data-light-js-show');
             let isVisible = evalJsExpr(expr, api.state);
-            el.style.display = isVisible ? '' : 'none';
+
+            if (isVisible) {
+                let display =
+                    el.getAttribute('data-light-js-display') ||
+                    (el.classList.contains('inline-flex') ? 'inline-flex' : '') ||
+                    (el.classList.contains('flex') ? 'flex' : '') ||
+                    (el.classList.contains('inline-grid') ? 'inline-grid' : '') ||
+                    (el.classList.contains('grid') ? 'grid' : '') ||
+                    (el.classList.contains('inline-block') ? 'inline-block' : '') ||
+                    (el.classList.contains('block') ? 'block' : '') ||
+                    'block';
+
+                el.style.display = display;
+            } else {
+                el.style.display = 'none';
+            }
         });
 
         document.querySelectorAll(`[data-light-js-class]`).forEach((el) => {
@@ -639,8 +654,6 @@
     document.addEventListener('click', (e) => {
         let el = e.target.closest('[data-light-click]');
         if (!el) return;
-
-        if (!validateScope(document)) return;
 
         let parsed = parse(el.dataset.lightClick);
         let state = collect();
