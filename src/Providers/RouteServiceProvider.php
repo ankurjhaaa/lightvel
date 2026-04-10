@@ -10,7 +10,7 @@ class RouteServiceProvider extends ServiceProvider
 {
     public function boot(): void
     {
-        Route::middleware('web')->post(config('lightvel.message_endpoint', '/lightvel/message'), function (Request $request) {
+        $handler = function (Request $request) {
             $targetUrl = (string) $request->input('url', url()->current());
             $parsedTarget = parse_url($targetUrl);
             $parsedCurrent = parse_url(url()->current());
@@ -37,12 +37,24 @@ class RouteServiceProvider extends ServiceProvider
                 'params' => $request->input('params', []),
             ];
 
+            $component = (string) $request->header('X-Light-Component', (string) $request->input('component', ''));
+            $fingerprint = (string) $request->header('X-Light-Fingerprint', (string) $request->input('fingerprint', ''));
+
+            if (app()->bound('debugbar')) {
+                try {
+                    app('debugbar')->addMessage('lightvel component ' . ($component ?: 'unknown') . ' #' . ($fingerprint ?: 'n/a'), 'lightvel');
+                } catch (\Throwable $e) {
+                }
+            }
+
             $server = $request->server->all();
             $server['REQUEST_METHOD'] = 'POST';
             $server['CONTENT_TYPE'] = 'application/json';
             $server['HTTP_ACCEPT'] = 'application/json';
             $server['HTTP_X_LIGHT'] = 'true';
             $server['HTTP_X_LIGHT_FORWARDED'] = 'true';
+            $server['HTTP_X_LIGHT_COMPONENT'] = $component;
+            $server['HTTP_X_LIGHT_FINGERPRINT'] = $fingerprint;
 
             $forward = Request::create(
                 $path . (empty($query) ? '' : '?' . http_build_query($query)),
@@ -84,6 +96,15 @@ class RouteServiceProvider extends ServiceProvider
             }
 
             return $response;
-        })->name('lightvel.message');
+        };
+
+        Route::middleware('web')
+            ->post(config('lightvel.message_endpoint', '/lightvel/message'), $handler)
+            ->name('lightvel.message');
+
+        Route::middleware('web')
+            ->post('/lightvel-{fingerprint}/update', $handler)
+            ->where('fingerprint', '[A-Za-z0-9]+')
+            ->name('lightvel.component.update');
     }
 }

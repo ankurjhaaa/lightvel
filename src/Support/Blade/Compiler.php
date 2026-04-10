@@ -60,15 +60,45 @@ class Compiler
         $view .= "<?php
             \$__content = ob_get_clean();
 
+            \$__route = request()->route();
+            \$__routeAction = \$__route ? \$__route->getAction() : [];
+            \$__lightvelView = isset(\$__routeAction['view'])
+                ? str_replace('.', '::', (string) \$__routeAction['view'])
+                : (\$__route?->getName() ?: trim((string) request()->path(), '/'));
+            if (\$__lightvelView === '') {
+                \$__lightvelView = 'home';
+            }
+
+            \$__lightvelFingerprint = substr(sha1(\$__lightvelView . '|' . request()->path() . '|' . get_class(\$__lv)), 0, 20);
+            \$__lightvelEndpoint = '/lightvel-' . \$__lightvelFingerprint . '/update';
+
             \$__rules = \$__lv->rulesForClient();
                 \$__rulesAttr = empty(\$__rules) ? '' : ' data-light-server-rules=\"' . htmlspecialchars(json_encode(\$__rules), ENT_QUOTES, 'UTF-8') . '\"';
             \$__state = \$__lv->stateForClient();
             \$__stateAttr = empty(\$__state) ? '' : ' data-light-server-state=\"' . htmlspecialchars(json_encode(\$__state), ENT_QUOTES, 'UTF-8') . '\"';
 
-            \$__dom = '<div data-light-root' . \$__rulesAttr . \$__stateAttr . '>' . \$__content . '</div>';
+            \$__metaAttr =
+                ' data-light-endpoint=\"' . htmlspecialchars(\$__lightvelEndpoint, ENT_QUOTES, 'UTF-8') . '\"' .
+                ' data-light-component=\"' . htmlspecialchars(\$__lightvelView, ENT_QUOTES, 'UTF-8') . '\"' .
+                ' data-light-fingerprint=\"' . htmlspecialchars(\$__lightvelFingerprint, ENT_QUOTES, 'UTF-8') . '\"';
+
+            \$__dom = '<div data-light-root' . \$__metaAttr . \$__rulesAttr . \$__stateAttr . '>' . \$__content . '</div>';
+
+            if (app()->bound('debugbar')) {
+                try {
+                    app('debugbar')->addMessage('lightvel component ' . \$__lightvelView . ' #' . \$__lightvelFingerprint, 'lightvel');
+                } catch (\Throwable \$__e) {
+                }
+            }
 
             if (request()->header('X-Light')) {
                 \$__payload = is_array(\$__result) ? \$__result : [];
+                if (!array_key_exists('__lightvel_component', \$__payload)) {
+                    \$__payload['__lightvel_component'] = \$__lightvelView;
+                }
+                if (!array_key_exists('__lightvel_fingerprint', \$__payload)) {
+                    \$__payload['__lightvel_fingerprint'] = \$__lightvelFingerprint;
+                }
                 header('Content-Type: application/json');
                 echo json_encode(\$__payload);
                 return;

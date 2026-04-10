@@ -679,6 +679,20 @@
     function applyScopedBindings(root, scopeState) {
         if (!root || !root.querySelectorAll) return;
 
+        function scopedElements(selector) {
+            let list = [];
+
+            if (typeof root.matches === 'function' && root.matches(selector)) {
+                list.push(root);
+            }
+
+            if (typeof root.querySelectorAll === 'function') {
+                list.push(...Array.from(root.querySelectorAll(selector)));
+            }
+
+            return list;
+        }
+
         function splitCallArgs(rawArgs) {
             let args = [];
             let current = '';
@@ -782,7 +796,7 @@
             return resolved.join(',');
         }
 
-        root.querySelectorAll('[data-light-text]').forEach((el) => {
+        scopedElements('[data-light-text]').forEach((el) => {
             let expr = el.getAttribute('data-light-text');
             if (!expr) return;
 
@@ -790,7 +804,7 @@
             el.innerText = value == null ? '' : String(value);
         });
 
-        root.querySelectorAll('[data-light-show], [data-light-if]').forEach((el) => {
+        scopedElements('[data-light-show], [data-light-if]').forEach((el) => {
             let expr = el.getAttribute('data-light-show') || el.getAttribute('data-light-if');
             if (!expr) return;
 
@@ -808,7 +822,7 @@
             el.style.display = visible ? display : 'none';
         });
 
-        root.querySelectorAll('[data-light-class]').forEach((el) => {
+        scopedElements('[data-light-class]').forEach((el) => {
             let expr = el.getAttribute('data-light-class');
             if (!expr) return;
 
@@ -830,14 +844,14 @@
             });
         });
 
-        root.querySelectorAll('[data-light-click]').forEach((el) => {
+        scopedElements('[data-light-click]').forEach((el) => {
             let action = el.getAttribute('data-light-click');
             if (!action) return;
 
             el.setAttribute('data-light-click', resolveScopedAction(action));
         });
 
-        root.querySelectorAll('[data-light-function]').forEach((el) => {
+        scopedElements('[data-light-function]').forEach((el) => {
             let expr = el.getAttribute('data-light-function');
             if (!expr) return;
 
@@ -929,7 +943,10 @@
 
     function call(action, params = {}) {
         let csrfToken = document.querySelector('meta[name=csrf-token]')?.content || '';
-        let endpoint = getConfig().messageEndpoint || '/lightvel/message';
+        let root = document.querySelector('[data-light-root]');
+        let endpoint = root?.dataset.lightEndpoint || getConfig().messageEndpoint || '/lightvel/message';
+        let component = root?.dataset.lightComponent || '';
+        let fingerprint = root?.dataset.lightFingerprint || '';
 
         fetch(endpoint, {
             method: 'POST',
@@ -937,16 +954,22 @@
                 'Content-Type': 'application/json',
                 'X-CSRF-TOKEN': csrfToken,
                 'X-Light': 'true',
+                'X-Light-Component': component,
+                'X-Light-Fingerprint': fingerprint,
             },
             body: JSON.stringify({
                 url: window.location.href,
                 action,
                 params,
+                component,
+                fingerprint,
             }),
         })
             .then((r) => {
                 if (!r.ok) {
-                    throw new Error('Request failed with status ' + r.status);
+                    return r.text().then((body) => {
+                        throw new Error('Request failed with status ' + r.status + (body ? ' :: ' + body : ''));
+                    });
                 }
 
                 return r.json();
@@ -954,6 +977,12 @@
             .then(update)
             .catch((err) => {
                 console.error('Lightvel request failed:', err);
+
+                let api = getJsApi();
+                api.state.status = false;
+                api.state.message = err?.message || 'Lightvel request failed';
+                syncBindings();
+                setErrors({ __global: [api.state.message] });
 
                 document.querySelectorAll('[data-light-bind="status"]').forEach((el) => {
                     el.innerText = 'Request failed. Check console/logs.';
@@ -978,6 +1007,10 @@
 
         if (Object.prototype.hasOwnProperty.call(payload, 'status')) {
             api.state.status = payload.status;
+
+            if (payload.status === false && payload.message) {
+                setErrors({ __global: [String(payload.message)] });
+            }
         }
 
         if (payload.__lightvel_dom) {
