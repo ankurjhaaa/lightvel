@@ -4,15 +4,17 @@
     <meta charset="UTF-8">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ layout_title }}</title>
+    <title>{{ $title ?? 'Lightvel' }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body style="font-family: system-ui, sans-serif; margin: 0; background: #f8fafc; color: #0f172a;">
-    <header style="padding: 16px 24px; border-bottom: 1px solid #e2e8f0; background: #fff;">
-        <strong>Lightvel Layout</strong>
+<body class="bg-gray-50">
+    <header class="border-b bg-white">
+        <div class="px-6 py-4">
+            <strong class="text-lg">Lightvel</strong>
+        </div>
     </header>
 
-    <main style="padding: 24px;">
-        {{-- Main page content is injected here. --}}
+    <main class="p-6">
         {!! $slot ?? '' !!}
     </main>
 

@@ -68,6 +68,7 @@
         api.consts = api.consts || {};
         api.actions = api.actions || {};
         api.errors = api.errors || {};
+        api._syncDepth = api._syncDepth || 0;
 
         api.set = api.set || function (key, value) {
             if (Object.prototype.hasOwnProperty.call(api.consts, key)) {
@@ -75,7 +76,24 @@
             }
 
             api.state[key] = value;
-            syncBindings(key);
+
+            if (api._syncDepth === 0) {
+                syncBindings(key);
+            }
+        };
+
+        api.batch = api.batch || function (callback) {
+            api._syncDepth++;
+
+            try {
+                return callback();
+            } finally {
+                api._syncDepth--;
+
+                if (api._syncDepth === 0) {
+                    syncBindings();
+                }
+            }
         };
 
         api.get = api.get || function (key) {
@@ -234,30 +252,6 @@
             } catch (_) {
                 // ignore invalid state json
             }
-        });
-
-        scope.querySelectorAll('[data-light-state], [data-light-variable]').forEach((el) => {
-            let raw = el.getAttribute('data-light-state') || el.getAttribute('data-light-variable');
-            if (!raw) return;
-
-            let vars = parseLightAssignments(raw);
-            Object.entries(vars).forEach(([key, value]) => {
-                if (api.state[key] === undefined) {
-                    api.state[key] = value;
-                }
-            });
-        });
-
-        scope.querySelectorAll('[data-light-variable]').forEach((el) => {
-            let raw = el.getAttribute('data-light-variable');
-            if (!raw) return;
-
-            let vars = parseLightAssignments(raw);
-            Object.entries(vars).forEach(([key, value]) => {
-                if (!Object.prototype.hasOwnProperty.call(api.consts, key) && api.state[key] === undefined) {
-                    api.state[key] = value;
-                }
-            });
         });
 
         scope.querySelectorAll('[data-light-const]').forEach((el) => {
@@ -879,20 +873,20 @@
                 list = [];
             }
 
-            if (node._lightRenderedNodes && node._lightRenderedNodes.length) {
-                node._lightRenderedNodes.forEach((renderedNode) => renderedNode.remove());
-            }
-
             let isTemplate = node.tagName === 'TEMPLATE';
-
-            if (!isTemplate) {
-                node.style.display = 'none';
-            }
 
             if (!node._lightForSourceHtml) {
                 node._lightForSourceHtml = isTemplate
                     ? node.innerHTML
                     : node.outerHTML.replace(/\sdata-light-for="[^"]*"/g, '');
+            }
+
+            if (!isTemplate) {
+                node.style.display = 'none';
+            }
+
+            if (node._lightRenderedNodes && node._lightRenderedNodes.length) {
+                node._lightRenderedNodes.forEach((renderedNode) => renderedNode.remove());
             }
 
             let html = node._lightForSourceHtml;
@@ -941,6 +935,76 @@
         });
     }
 
+    function normalizeStoredPayload(payload, fallbackKey = 'data') {
+        if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+            return payload;
+        }
+
+        if (Array.isArray(payload)) {
+            return { data: payload };
+        }
+
+        if (payload === null || payload === undefined) {
+            return {};
+        }
+
+        return { [fallbackKey || 'value']: payload };
+    }
+
+    function applyStoredPayload(payload, fallbackKey = 'data') {
+        let api = getJsApi();
+        let normalized = normalizeStoredPayload(payload, fallbackKey);
+
+        api.batch(() => {
+            Object.entries(normalized).forEach(([k, v]) => {
+                if (k.startsWith('__')) {
+                    return;
+                }
+
+                api.state[k] = v;
+            });
+        });
+
+        return normalized;
+    }
+
+    function invokeCustomFunction(name, args = [], context = {}) {
+        let fn = window[name] || window.Lightvel?.functions?.[name];
+
+        if (typeof fn !== 'function') {
+            console.warn('Lightvel function not found:', name);
+            return;
+        }
+
+        let api = getJsApi();
+        let result = fn(...args, {
+            event: context.event || null,
+            el: context.el || null,
+            state: api.state,
+            set: api.set,
+            get: api.get,
+            batch: api.batch,
+            api,
+        });
+
+        if (result && typeof result.then === 'function') {
+            result.then((resolved) => {
+                applyStoredPayload(resolved, name);
+            }).catch((err) => {
+                console.error('Lightvel function failed:', err);
+            });
+
+            return;
+        }
+
+        if (result !== undefined) {
+            applyStoredPayload(result, name);
+            return;
+        }
+
+        syncBindings();
+    }
+
     function call(action, params = {}) {
         let csrfToken = document.querySelector('meta[name=csrf-token]')?.content || '';
         let root = document.querySelector('[data-light-root]');
@@ -952,6 +1016,7 @@
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                'Accept': 'application/json',
                 'X-CSRF-TOKEN': csrfToken,
                 'X-Light': 'true',
                 'X-Light-Component': component,
@@ -965,16 +1030,42 @@
                 fingerprint,
             }),
         })
-            .then((r) => {
-                if (!r.ok) {
-                    return r.text().then((body) => {
-                        throw new Error('Request failed with status ' + r.status + (body ? ' :: ' + body : ''));
-                    });
+            .then(async (r) => {
+                let contentType = r.headers.get('Content-Type') || '';
+                let isJson = contentType.includes('application/json');
+                let payload = null;
+
+                if (isJson) {
+                    try {
+                        payload = await r.json();
+                    } catch (_) {
+                        payload = null;
+                    }
                 }
 
-                return r.json();
+                if (!r.ok) {
+                    if (payload && typeof payload === 'object') {
+                        update(payload, action);
+                        return null;
+                    }
+
+                    let body = '';
+                    try {
+                        body = await r.text();
+                    } catch (_) {
+                        body = '';
+                    }
+
+                    throw new Error('Request failed with status ' + r.status + (body ? ' :: ' + body : ''));
+                }
+
+                return payload;
             })
-            .then(update)
+            .then((payload) => {
+                if (payload !== null && payload !== undefined) {
+                    update(payload, action);
+                }
+            })
             .catch((err) => {
                 console.error('Lightvel request failed:', err);
 
@@ -990,9 +1081,9 @@
             });
     }
 
-    function update(data) {
+    function update(data, fallbackKey = 'data') {
         let api = getJsApi();
-        let payload = data || {};
+        let payload = normalizeStoredPayload(data, fallbackKey);
 
         if (payload.__lightvel_errors !== undefined) {
             setErrors(payload.__lightvel_errors || {});
@@ -1027,18 +1118,6 @@
             renderErrors(getJsApi().errors || {});
 
             return;
-        }
-
-        if (
-            payload.data
-            && typeof payload.data === 'object'
-            && !Array.isArray(payload.data)
-        ) {
-            payload = {
-                ...payload,
-                ...payload.data,
-            };
-            delete payload.data;
         }
 
         Object.entries(payload).forEach(([k, v]) => {
@@ -1182,9 +1261,10 @@
         }
 
         let api = getJsApi();
+        let parsed = parse(el.dataset.lightFunction);
+        let resolvedArgs = (parsed.args || []).map((arg) => evaluateLightExpression(arg, api.state));
 
-        applyFunctionAssignments(el.dataset.lightFunction, api);
-        syncBindings();
+        invokeCustomFunction(parsed.action, resolvedArgs, { event: e, el });
     });
 
     document.addEventListener('click', (e) => {

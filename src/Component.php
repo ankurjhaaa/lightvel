@@ -248,18 +248,12 @@ class Component
                 && method_exists($this, $action)
             ) {
                 $result = $this->$action(...$actionArgs);
-                $normalized = $this->normalizeActionResult($result);
+                if ($result instanceof JsonResponse) {
+                    return $result;
+                }
 
-                if (is_array($normalized)) {
-                    if ($this->isEnvelopeResponse($normalized)) {
-                        if (isset($normalized['data']) && is_array($normalized['data'])) {
-                            $this->setState($normalized['data']);
-                        }
-
-                        return $normalized;
-                    }
-
-                    $this->mergeResponseData($normalized);
+                if ($result !== null) {
+                    return response()->json($result);
                 }
             }
         } catch (ValidationException $e) {
@@ -274,18 +268,6 @@ class Component
             ];
         }
 
-        $updated = $this->stateForClient();
-
-        $diff = [];
-        foreach ($updated as $k => $v) {
-            if (($original[$k] ?? null) !== $v) {
-                $diff[$k] = $v;
-            }
-        }
-
-        $errors = $this->getErrorBag()->getBag('default')->toArray();
-        $diff['__lightvel_errors'] = empty($errors) ? [] : $errors;
-
-        return $diff;
+        return response()->json((object) []);
     }
 }

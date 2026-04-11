@@ -19,7 +19,6 @@ class Directives
             $view = preg_replace('/light:bind="([^"]+)"/', 'data-light-bind="$1"', $view);
 
             $view = preg_replace('/light:state="([^"]+)"/', 'data-light-state="$1"', $view);
-            $view = preg_replace('/light:variable="([^"]+)"/', 'data-light-state="$1"', $view);
             $view = preg_replace('/light:const="([^"]+)"/', 'data-light-const="$1"', $view);
             $view = preg_replace('/light:function="([^"]+)"/', 'data-light-function="$1"', $view);
             $view = preg_replace('/light:text="([^"]+)"/', 'data-light-text="$1"', $view);

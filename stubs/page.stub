@@ -1,26 +1,67 @@
 @php
 
+use Illuminate\Support\Facades\DB;
 use Lightvel\Component;
 use Lightvel\Layout;
 
 new #[Layout('{{ layout_name }}')] class extends Component {
-    public $status = '{{ status_label }}';
+
+    protected function usersQuery()
+    {
+        return DB::table('users')
+            ->select('id', 'name', 'email')
+            ->orderByDesc('id');
+    }
 
     public function lightvel()
     {
-        // Load initial data here.
+        return [
+            'users' => $this->usersQuery()->get(),
+        ];
     }
 
-    public function action()
+    public function deleteUser(int $id)
     {
-        // Put your action logic here.
-        $this->status = '{{ action_label }}';
+        $this->usersQuery()->where('id', $id)->delete();
+
+        return [
+            'users' => $this->usersQuery()->get(),
+        ];
     }
+
 };
 
 @endphp
 
-<div style="max-width:720px;margin:40px auto;padding:24px;border:1px solid #e2e8f0;border-radius:16px;background:#fff;">
-    <h2 light:bind="status">{{ $status }}</h2>
-    <button light:click="action" style="padding:10px 16px;border-radius:10px;">Run Action</button>
+<div class="max-w-6xl mx-auto bg-white rounded-xl shadow p-6">
+    <div class="flex items-center justify-between mb-6">
+        <h1 class="text-2xl font-bold">Users</h1>
+    </div>
+
+    <table class="w-full border-collapse border border-gray-300">
+        <thead class="bg-gray-100">
+            <tr>
+                <th class="border border-gray-300 p-3 text-left">ID</th>
+                <th class="border border-gray-300 p-3 text-left">Name</th>
+                <th class="border border-gray-300 p-3 text-left">Email</th>
+                <th class="border border-gray-300 p-3 text-left">Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr light:for="user in users">
+                <td class="border border-gray-300 p-3">{{ echo.user.id }}</td>
+                <td class="border border-gray-300 p-3">{{ echo.user.name }}</td>
+                <td class="border border-gray-300 p-3">{{ echo.user.email }}</td>
+                <td class="border border-gray-300 p-3">
+                    <button
+                        type="button"
+                        class="px-4 py-2 bg-red-600 text-white rounded"
+                        light:click="deleteUser(user.id)"
+                    >
+                        Delete
+                    </button>
+                </td>
+            </tr>
+        </tbody>
+    </table>
 </div>

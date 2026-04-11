@@ -92,15 +92,14 @@ class Compiler
             }
 
             if (request()->header('X-Light')) {
-                \$__payload = is_array(\$__result) ? \$__result : [];
-                if (!array_key_exists('__lightvel_component', \$__payload)) {
-                    \$__payload['__lightvel_component'] = \$__lightvelView;
-                }
-                if (!array_key_exists('__lightvel_fingerprint', \$__payload)) {
-                    \$__payload['__lightvel_fingerprint'] = \$__lightvelFingerprint;
-                }
                 header('Content-Type: application/json');
-                echo json_encode(\$__payload);
+
+                if (\$__result instanceof \Illuminate\Http\JsonResponse) {
+                    echo (string) \$__result->getContent();
+                    return;
+                }
+
+                echo json_encode(\$__result);
                 return;
             }
 

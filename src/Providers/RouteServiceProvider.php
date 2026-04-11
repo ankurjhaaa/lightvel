@@ -95,7 +95,19 @@ class RouteServiceProvider extends ServiceProvider
                 $response = app()->handle($fallback);
             }
 
-            return $response;
+            if ($response instanceof \Illuminate\Http\JsonResponse) {
+                return $response;
+            }
+
+            $content = $response->getContent();
+            $data = is_string($content) && !empty($content) ? json_decode($content, true) : [];
+
+            if (!is_array($data)) {
+                $data = [];
+            }
+
+            return response()->json($data);
+        
         };
 
         Route::middleware('web')
