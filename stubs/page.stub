@@ -33,35 +33,43 @@ new #[Layout('{{ layout_name }}')] class extends Component {
 
 @endphp
 
-<div class="max-w-6xl mx-auto bg-white rounded-xl shadow p-6">
-    <div class="flex items-center justify-between mb-6">
-        <h1 class="text-2xl font-bold">Users</h1>
+<div style="max-width: 960px; margin: 32px auto; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 14px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08);">
+    <div style="display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid #e5e7eb;">
+        <h1 style="margin: 0; font-size: 22px; color: #111827;">Users</h1>
+        <div style="font-size: 14px; color: #6b7280;">Total: <strong><span>{{ light.users.length }}</span></strong></div>
     </div>
 
-    <table class="w-full border-collapse border border-gray-300">
-        <thead class="bg-gray-100">
-            <tr>
-                <th class="border border-gray-300 p-3 text-left">ID</th>
-                <th class="border border-gray-300 p-3 text-left">Name</th>
-                <th class="border border-gray-300 p-3 text-left">Email</th>
-                <th class="border border-gray-300 p-3 text-left">Action</th>
-            </tr>
-        </thead>
-        <tbody>
-            <tr light:for="user in users">
-                <td class="border border-gray-300 p-3">{{ echo.user.id }}</td>
-                <td class="border border-gray-300 p-3">{{ echo.user.name }}</td>
-                <td class="border border-gray-300 p-3">{{ echo.user.email }}</td>
-                <td class="border border-gray-300 p-3">
-                    <button
-                        type="button"
-                        class="px-4 py-2 bg-red-600 text-white rounded"
-                        light:click="deleteUser(user.id)"
-                    >
-                        Delete
-                    </button>
-                </td>
-            </tr>
-        </tbody>
-    </table>
+    <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; table-layout: auto;">
+            <thead>
+                <tr style="background: #f9fafb;">
+                    <th style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: left;">ID</th>
+                    <th style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: left;">Name</th>
+                    <th style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: left;">Email</th>
+                    <th style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: right;">Action</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                <tr light:for="user in users">
+                    <td style="padding: 12px; border-bottom: 1px solid #f3f4f6;"><span>{{ light.user.id }}</span></td>
+                    <td style="padding: 12px; border-bottom: 1px solid #f3f4f6;"><span>{{ light.user.name }}</span></td>
+                    <td style="padding: 12px; border-bottom: 1px solid #f3f4f6;"><span>{{ light.user.email }}</span></td>
+                    <td style="padding: 12px; border-bottom: 1px solid #f3f4f6; text-align: right;">
+                        <button
+                            type="button"
+                            style="padding: 8px 14px; border: 0; border-radius: 8px; background: #dc2626; color: #ffffff; cursor: pointer;"
+                            light:click="deleteUser({{ light.user.id }})"
+                        >
+                            Delete
+                        </button>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div light:if="users.length === 0" style="padding: 18px; color: #6b7280; text-align: center;">
+            No users found.
+        </div>
+    </div>
 </div>

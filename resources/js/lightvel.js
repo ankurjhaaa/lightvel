@@ -183,6 +183,10 @@
         });
 
         document.querySelectorAll('[data-light-class]').forEach((el) => {
+            if (el.getAttribute('data-light-scoped') === '1') {
+                return;
+            }
+
             let expr = el.getAttribute('data-light-class');
             if (!expr) return;
 
@@ -571,21 +575,36 @@
         });
     }
 
+    function normalizeLightExpression(expr) {
+        if (typeof expr !== 'string') {
+            return expr;
+        }
+
+        let normalized = expr.trim();
+
+        if (normalized.startsWith('{{') && normalized.endsWith('}}')) {
+            normalized = normalized.slice(2, -2).trim();
+        }
+
+        return normalized.replace(/\blight\./g, '');
+    }
+
     function evaluateLightExpression(expr, scopeState = null, extraScope = null) {
         let api = getJsApi();
         let state = Object.assign({}, api.consts || {}, scopeState || api.state || {});
         let extras = extraScope || {};
+        let normalizedExpr = normalizeLightExpression(expr);
 
         try {
-            return Function('state', 'scope', 'with(state){ with(scope){ return (' + expr + '); } }')(state, extras);
+            return Function('state', 'scope', 'with(state){ with(scope){ return (' + normalizedExpr + '); } }')(state, extras);
         } catch (_) {
             try {
-                if (Object.prototype.hasOwnProperty.call(state, expr)) {
-                    return state[expr];
+                if (Object.prototype.hasOwnProperty.call(state, normalizedExpr)) {
+                    return state[normalizedExpr];
                 }
 
-                if (Object.prototype.hasOwnProperty.call(api.consts, expr)) {
-                    return api.consts[expr];
+                if (Object.prototype.hasOwnProperty.call(api.consts, normalizedExpr)) {
+                    return api.consts[normalizedExpr];
                 }
             } catch (_) {
                 // ignore
@@ -635,7 +654,7 @@
     function syncLightTextBindings(key) {
         let api = getJsApi();
 
-        document.querySelectorAll('[data-light-text]').forEach((el) => {
+        document.querySelectorAll('[data-light-text]:not([data-light-scoped="1"])').forEach((el) => {
             let expr = el.getAttribute('data-light-text');
             if (!expr) return;
 
@@ -651,7 +670,7 @@
     function syncLightConditionals() {
         let api = getJsApi();
 
-        document.querySelectorAll('[data-light-show], [data-light-if]').forEach((el) => {
+        document.querySelectorAll('[data-light-show]:not([data-light-scoped="1"]), [data-light-if]:not([data-light-scoped="1"])').forEach((el) => {
             let expr = el.getAttribute('data-light-show') || el.getAttribute('data-light-if');
             if (!expr) return;
 
@@ -755,7 +774,7 @@
                 return action;
             }
 
-            let args = splitCallArgs(rawArgs).map((argExpr) => evaluateLightExpression(argExpr, scopeState));
+            let args = splitCallArgs(rawArgs).map((argExpr) => evaluateLightExpression(normalizeLightExpression(argExpr), scopeState));
             let serialized = args.map((value) => JSON.stringify(value)).join(',');
 
             return `${action}(${serialized})`;
@@ -791,6 +810,7 @@
         }
 
         scopedElements('[data-light-text]').forEach((el) => {
+            el.setAttribute('data-light-scoped', '1');
             let expr = el.getAttribute('data-light-text');
             if (!expr) return;
 
@@ -799,6 +819,7 @@
         });
 
         scopedElements('[data-light-show], [data-light-if]').forEach((el) => {
+            el.setAttribute('data-light-scoped', '1');
             let expr = el.getAttribute('data-light-show') || el.getAttribute('data-light-if');
             if (!expr) return;
 
@@ -817,6 +838,7 @@
         });
 
         scopedElements('[data-light-class]').forEach((el) => {
+            el.setAttribute('data-light-scoped', '1');
             let expr = el.getAttribute('data-light-class');
             if (!expr) return;
 

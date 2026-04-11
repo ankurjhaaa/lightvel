@@ -56,6 +56,7 @@ class Compiler
         $view = str_replace($scriptBlock[0], $boot, $view);
 
         $view = preg_replace('/\{\{\s*echo\.([A-Za-z_][A-Za-z0-9_\.\->]*)\s*\}\}/', '<span data-light-text="$1"></span>', $view);
+        $view = preg_replace('/\{\{\s*light\.([A-Za-z_][A-Za-z0-9_\.\->]*)\s*\}\}/', '<span data-light-text="$1"></span>', $view);
 
         $view .= "<?php
             \$__content = ob_get_clean();
