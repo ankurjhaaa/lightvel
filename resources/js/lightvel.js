@@ -897,41 +897,50 @@
 
             let isTemplate = node.tagName === 'TEMPLATE';
 
-            if (!node._lightForSourceHtml) {
-                node._lightForSourceHtml = isTemplate
-                    ? node.innerHTML
-                    : node.outerHTML.replace(/\sdata-light-for="[^"]*"/g, '');
-            }
-
             if (!isTemplate) {
                 node.style.display = 'none';
+
+                if (!node._lightForTemplateNode) {
+                    node._lightForTemplateNode = node.cloneNode(true);
+                    node._lightForTemplateNode.removeAttribute('data-light-for');
+                }
+            } else if (!node._lightForSourceHtml) {
+                node._lightForSourceHtml = node.innerHTML;
             }
 
             if (node._lightRenderedNodes && node._lightRenderedNodes.length) {
                 node._lightRenderedNodes.forEach((renderedNode) => renderedNode.remove());
             }
 
-            let html = node._lightForSourceHtml;
+            let wrapper = document.createDocumentFragment();
+            let nodes = [];
 
-            let renderedFragments = list.map((item, index) => {
+            list.forEach((item, index) => {
                 let scope = Object.assign({}, api.consts || {}, api.state || {}, {
                     [itemName]: item,
                     index,
                     $index: index,
                 });
 
-                let fragment = document.createRange().createContextualFragment(html);
-                applyScopedBindings(fragment, scope);
-                return fragment;
-            });
+                if (isTemplate) {
+                    let fragment = document.createRange().createContextualFragment(node._lightForSourceHtml || '');
+                    applyScopedBindings(fragment, scope);
 
-            let wrapper = document.createDocumentFragment();
-            let nodes = [];
+                    let childNodes = Array.from(fragment.childNodes);
+                    childNodes.forEach((child) => wrapper.appendChild(child));
+                    nodes.push(...childNodes);
 
-            renderedFragments.forEach((fragment) => {
-                let childNodes = Array.from(fragment.childNodes);
-                childNodes.forEach((node) => wrapper.appendChild(node));
-                nodes.push(...childNodes);
+                    return;
+                }
+
+                let clone = node._lightForTemplateNode.cloneNode(true);
+                clone.removeAttribute('data-light-for');
+                clone.removeAttribute('data-light-scoped');
+                clone.style.display = '';
+
+                applyScopedBindings(clone, scope);
+                wrapper.appendChild(clone);
+                nodes.push(clone);
             });
 
             node.after(wrapper);

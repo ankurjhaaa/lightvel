@@ -36,7 +36,7 @@ new #[Layout('{{ layout_name }}')] class extends Component {
 <div style="max-width: 960px; margin: 32px auto; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 14px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08);">
     <div style="display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid #e5e7eb;">
         <h1 style="margin: 0; font-size: 22px; color: #111827;">Users</h1>
-        <div style="font-size: 14px; color: #6b7280;">Total: <strong><span>{{ light.users.length }}</span></strong></div>
+        <div style="font-size: 14px; color: #6b7280;">Total: <strong><span light:text="users.length"></span></strong></div>
     </div>
 
     <div style="overflow-x: auto;">
@@ -52,14 +52,14 @@ new #[Layout('{{ layout_name }}')] class extends Component {
 
             <tbody>
                 <tr light:for="user in users">
-                    <td style="padding: 12px; border-bottom: 1px solid #f3f4f6;"><span>{{ light.user.id }}</span></td>
-                    <td style="padding: 12px; border-bottom: 1px solid #f3f4f6;"><span>{{ light.user.name }}</span></td>
-                    <td style="padding: 12px; border-bottom: 1px solid #f3f4f6;"><span>{{ light.user.email }}</span></td>
+                    <td style="padding: 12px; border-bottom: 1px solid #f3f4f6;" light:text="user.id"></td>
+                    <td style="padding: 12px; border-bottom: 1px solid #f3f4f6;" light:text="user.name"></td>
+                    <td style="padding: 12px; border-bottom: 1px solid #f3f4f6;" light:text="user.email"></td>
                     <td style="padding: 12px; border-bottom: 1px solid #f3f4f6; text-align: right;">
                         <button
                             type="button"
                             style="padding: 8px 14px; border: 0; border-radius: 8px; background: #dc2626; color: #ffffff; cursor: pointer;"
-                            light:click="deleteUser({{ light.user.id }})"
+                            light:click="deleteUser(user.id)"
                         >
                             Delete
                         </button>
