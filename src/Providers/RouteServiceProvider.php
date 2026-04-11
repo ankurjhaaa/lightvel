@@ -10,6 +10,32 @@ class RouteServiceProvider extends ServiceProvider
 {
     public function boot(): void
     {
+        Route::macro('lightvel', function (string $uri, string $view, array|string|null $methods = null) {
+            $handler = function () use ($view) {
+                return view($view);
+            };
+
+            if ($methods === null) {
+                $route = Route::any($uri, $handler);
+            } else {
+                $methodList = is_string($methods)
+                    ? array_values(array_filter(array_map('trim', preg_split('/[\s,|]+/', $methods) ?: [])))
+                    : array_values(array_filter(array_map('trim', $methods)));
+
+                if (empty($methodList)) {
+                    $methodList = ['GET'];
+                }
+
+                $route = Route::match($methodList, $uri, $handler);
+            }
+
+            $route->setAction(array_merge($route->getAction(), [
+                'view' => $view,
+            ]));
+
+            return $route;
+        });
+
         $handler = function (Request $request) {
             $targetUrl = (string) $request->input('url', url()->current());
             $parsedTarget = parse_url($targetUrl);
