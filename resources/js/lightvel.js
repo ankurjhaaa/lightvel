@@ -1038,29 +1038,112 @@
     }
 
     let __actionDebounceTimers = {};
-    let __actionDebounceDelay = 50;
+    let __activeControllers = {};
+    let __responseCache = {};
+    let __defaultDebounceDelay = Number(getConfig().debounceDelay || 0);
 
-    function call(action, params = {}) {
-        let debounceKey = action + ':' + JSON.stringify(params);
-        
+    function parseDurationMs(value, fallback = 0) {
+        if (value === null || value === undefined || value === '') {
+            return fallback;
+        }
+
+        if (typeof value === 'number' && !isNaN(value)) {
+            return Math.max(0, Math.floor(value));
+        }
+
+        let raw = String(value).trim().toLowerCase();
+        if (!raw) return fallback;
+
+        if (/^\d+$/.test(raw)) {
+            return Math.max(0, parseInt(raw, 10));
+        }
+
+        let match = raw.match(/^(\d+(?:\.\d+)?)(ms|s)$/);
+        if (!match) {
+            return fallback;
+        }
+
+        let amount = parseFloat(match[1]);
+        if (isNaN(amount)) {
+            return fallback;
+        }
+
+        if (match[2] === 's') {
+            return Math.max(0, Math.round(amount * 1000));
+        }
+
+        return Math.max(0, Math.round(amount));
+    }
+
+    function parseBoolean(value, fallback = false) {
+        if (value === null || value === undefined || value === '') {
+            return fallback;
+        }
+
+        let raw = String(value).trim().toLowerCase();
+        if (['1', 'true', 'yes', 'on'].includes(raw)) return true;
+        if (['0', 'false', 'no', 'off'].includes(raw)) return false;
+
+        return fallback;
+    }
+
+    function getElementDebounceMs(el) {
+        if (!el) return __defaultDebounceDelay;
+        return parseDurationMs(el.getAttribute('data-light-debounce'), __defaultDebounceDelay);
+    }
+
+    function call(action, params = {}, options = {}) {
+        let debounceMs = parseDurationMs(options.debounceMs, __defaultDebounceDelay);
+        let debounceKey = options.debounceKey || action;
+
+        if (debounceMs <= 0) {
+            return sendLightAction(action, params, options);
+        }
+
         if (__actionDebounceTimers[debounceKey]) {
             clearTimeout(__actionDebounceTimers[debounceKey]);
         }
-        
+
         __actionDebounceTimers[debounceKey] = setTimeout(() => {
             delete __actionDebounceTimers[debounceKey];
-            sendLightAction(action, params);
-        }, __actionDebounceDelay);
+            sendLightAction(action, params, options);
+        }, debounceMs);
+
+        return null;
     }
 
-    function sendLightAction(action, params = {}) {
+    function sendLightAction(action, params = {}, options = {}) {
         let csrfToken = document.querySelector('meta[name=csrf-token]')?.content || '';
         let root = document.querySelector('[data-light-root]');
         let endpoint = root?.dataset.lightEndpoint || getConfig().messageEndpoint || '/lightvel/message';
         let component = root?.dataset.lightComponent || '';
         let fingerprint = root?.dataset.lightFingerprint || '';
 
-        fetch(endpoint, {
+        let cacheEnabled = !!options.cache;
+        let cacheTtlMs = parseDurationMs(options.cacheTtlMs, 10000);
+        let cacheKey = options.cacheKey || `${action}:${JSON.stringify(params)}`;
+
+        if (cacheEnabled && __responseCache[cacheKey] && __responseCache[cacheKey].expiresAt > Date.now()) {
+            update(__responseCache[cacheKey].payload, action);
+
+            if (!options.refreshCache) {
+                return Promise.resolve(__responseCache[cacheKey].payload);
+            }
+        }
+
+        let controller = null;
+        let cancelKey = options.cancelKey || null;
+
+        if (cancelKey && typeof AbortController !== 'undefined') {
+            if (__activeControllers[cancelKey]) {
+                __activeControllers[cancelKey].abort();
+            }
+
+            controller = new AbortController();
+            __activeControllers[cancelKey] = controller;
+        }
+
+        return fetch(endpoint, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -1070,6 +1153,7 @@
                 'X-Light-Component': component,
                 'X-Light-Fingerprint': fingerprint,
             },
+            signal: controller ? controller.signal : undefined,
             body: JSON.stringify({
                 url: window.location.href,
                 action,
@@ -1111,10 +1195,23 @@
             })
             .then((payload) => {
                 if (payload !== null && payload !== undefined) {
+                    if (cacheEnabled && payload && typeof payload === 'object') {
+                        __responseCache[cacheKey] = {
+                            payload,
+                            expiresAt: Date.now() + cacheTtlMs,
+                        };
+                    }
+
                     update(payload, action);
                 }
+
+                return payload;
             })
             .catch((err) => {
+                if (err && err.name === 'AbortError') {
+                    return null;
+                }
+
                 console.error('Lightvel request failed:', err);
 
                 let api = getJsApi();
@@ -1126,11 +1223,23 @@
                 document.querySelectorAll('[data-light-bind="status"]').forEach((el) => {
                     el.innerText = 'Request failed. Check console/logs.';
                 });
+            })
+            .finally(() => {
+                if (cancelKey && __activeControllers[cancelKey] === controller) {
+                    delete __activeControllers[cancelKey];
+                }
             });
     }
 
     window.Lightvel = window.Lightvel || {};
-    window.Lightvel.debounceDelay = __actionDebounceDelay;
+    window.Lightvel.debounceDelay = __defaultDebounceDelay;
+    window.Lightvel.setDebounceDelay = function (value) {
+        __defaultDebounceDelay = parseDurationMs(value, 0);
+        window.Lightvel.debounceDelay = __defaultDebounceDelay;
+    };
+    window.Lightvel.clearCache = function () {
+        __responseCache = {};
+    };
 
     function update(data, fallbackKey = 'data') {
         let api = getJsApi();
@@ -1270,12 +1379,19 @@
 
         let parsed = parse(el.dataset.lightClick);
         let state = collect();
+        let debounceMs = getElementDebounceMs(el);
 
 
         if (parsed.args.length) {
-            call(parsed.action, parsed.args);
+            call(parsed.action, parsed.args, {
+                debounceMs,
+                debounceKey: `click:${parsed.action}`,
+            });
         } else {
-            call(parsed.action, state);
+            call(parsed.action, state, {
+                debounceMs,
+                debounceKey: `click:${parsed.action}`,
+            });
         }
     });
 
@@ -1346,7 +1462,50 @@
             ...Object.fromEntries(new FormData(f).entries()),
         };
 
-        call(f.dataset.lightSubmit, data);
+        call(f.dataset.lightSubmit, data, {
+            debounceMs: getElementDebounceMs(f),
+            debounceKey: `submit:${f.dataset.lightSubmit}`,
+        });
+    });
+
+    document.addEventListener('input', (e) => {
+        let el = e.target.closest('[data-light-search]');
+        if (!el) return;
+
+        let actionExpr = el.dataset.lightSearch;
+        if (!actionExpr) return;
+
+        let parsed = parse(actionExpr);
+        if (!parsed.action) return;
+
+        let query = getElementValue(el);
+        let minChars = Number(el.dataset.lightSearchMin || 0);
+        let queryLength = String(query ?? '').trim().length;
+
+        if (!isNaN(minChars) && queryLength < minChars) {
+            return;
+        }
+
+        if (el.dataset.lightModel) {
+            let api = getJsApi();
+            api.state[el.dataset.lightModel] = query;
+            syncBindings(el.dataset.lightModel);
+        }
+
+        let cacheEnabled = parseBoolean(el.dataset.lightCache, true);
+        let cacheTtlMs = parseDurationMs(el.dataset.lightCacheTtl, 10000);
+        let debounceMs = parseDurationMs(el.dataset.lightDebounce, 300);
+        let args = [query, ...(parsed.args || [])];
+
+        call(parsed.action, args, {
+            debounceMs,
+            debounceKey: `search:${parsed.action}`,
+            cancelKey: `search:${parsed.action}`,
+            cache: cacheEnabled,
+            cacheTtlMs,
+            cacheKey: `search:${parsed.action}:${JSON.stringify(args)}`,
+            refreshCache: false,
+        });
     });
 
     document.addEventListener('submit', (e) => {
