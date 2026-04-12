@@ -138,6 +138,31 @@
         let api = getJsApi();
         if (!key) return;
 
+        document.querySelectorAll(`[data-light-model="${key}"]`).forEach((el) => {
+            let nextValue = api.state[key] ?? '';
+
+            if (el.type === 'checkbox') {
+                el.checked = String(nextValue) === String(el.value || '1');
+                return;
+            }
+
+            if (el.type === 'radio') {
+                el.checked = String(nextValue) === String(el.value || '1');
+                return;
+            }
+
+            if (el.tagName === 'SELECT' && el.multiple && Array.isArray(nextValue)) {
+                Array.from(el.options).forEach((option) => {
+                    option.selected = nextValue.includes(option.value);
+                });
+                return;
+            }
+
+            if (el.value !== nextValue) {
+                el.value = nextValue;
+            }
+        });
+
         document.querySelectorAll(`[data-light-js-model="${key}"]`).forEach((el) => {
             if (el.hasAttribute('data-light-model')) {
                 return;
@@ -295,6 +320,15 @@
                 api.state[key] = getElementValue(el);
                 return;
             }
+
+            if (api.state[key] === undefined) {
+                api.state[key] = getElementValue(el);
+            }
+        });
+
+        scope.querySelectorAll('[data-light-model]').forEach((el) => {
+            let key = el.dataset.lightModel;
+            if (!key) return;
 
             if (api.state[key] === undefined) {
                 api.state[key] = getElementValue(el);
@@ -1482,7 +1516,7 @@
         let minChars = Number(el.dataset.lightSearchMin || 0);
         let queryLength = String(query ?? '').trim().length;
 
-        if (!isNaN(minChars) && queryLength < minChars) {
+        if (!isNaN(minChars) && queryLength < minChars && queryLength > 0) {
             return;
         }
 
@@ -1538,6 +1572,23 @@
     });
 
     document.addEventListener('input', (e) => {
+        let modelEl = e.target.closest('[data-light-model]');
+        if (modelEl) {
+            let field = getFieldName(modelEl);
+            if (!field) return;
+
+            let api = getJsApi();
+            api.state[field] = getElementValue(modelEl);
+            syncBindings(field);
+
+            let result = validateElement(modelEl, getRootRules());
+            if (result) {
+                setFieldErrors(result.field, result.errors);
+            }
+
+            return;
+        }
+
         let el = e.target.closest('[data-light-js-model]');
         if (!el) return;
 
@@ -1555,6 +1606,23 @@
     });
 
     document.addEventListener('change', (e) => {
+        let modelEl = e.target.closest('[data-light-model]');
+        if (modelEl) {
+            let field = getFieldName(modelEl);
+            if (!field) return;
+
+            let api = getJsApi();
+            api.state[field] = getElementValue(modelEl);
+            syncBindings(field);
+
+            let result = validateElement(modelEl, getRootRules());
+            if (result) {
+                setFieldErrors(result.field, result.errors);
+            }
+
+            return;
+        }
+
         let el = e.target.closest('[data-light-js-model]');
         if (!el) return;
 
