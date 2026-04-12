@@ -887,6 +887,8 @@
             let sourceExpr = match[2];
             let list = evaluateLightExpression(sourceExpr, api.state);
 
+            console.log(`[Lightvel] Rendering loop: ${itemName} in ${sourceExpr}, items:`, list);
+
             if (list && typeof list === 'object' && !Array.isArray(list)) {
                 list = Object.values(list);
             }
@@ -1043,6 +1045,8 @@
         let component = root?.dataset.lightComponent || '';
         let fingerprint = root?.dataset.lightFingerprint || '';
 
+        console.log(`[Lightvel] Calling action: ${action}`, params);
+
         fetch(endpoint, {
             method: 'POST',
             headers: {
@@ -1116,6 +1120,8 @@
         let api = getJsApi();
         let payload = normalizeStoredPayload(data, fallbackKey);
         let debugPayload = payload.__lightvel_debug || null;
+
+        console.log('[Lightvel] Update payload:', payload);
 
         if (payload.__lightvel_errors !== undefined) {
             setErrors(payload.__lightvel_errors || {});
