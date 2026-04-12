@@ -685,6 +685,33 @@
         renderLightForTemplates();
     }
 
+    let __pendingSyncFrame = null;
+    let __pendingSyncKeys = new Set();
+
+    function queueSyncBindings(key = null) {
+        if (key) {
+            __pendingSyncKeys.add(key);
+        }
+
+        if (__pendingSyncFrame) {
+            return;
+        }
+
+        __pendingSyncFrame = requestAnimationFrame(() => {
+            __pendingSyncFrame = null;
+
+            let keys = Array.from(__pendingSyncKeys);
+            __pendingSyncKeys.clear();
+
+            if (!keys.length) {
+                syncBindings();
+                return;
+            }
+
+            keys.forEach((stateKey) => syncBindings(stateKey));
+        });
+    }
+
     function syncLightTextBindings(key) {
         let api = getJsApi();
 
@@ -1569,7 +1596,7 @@
 
             let api = getJsApi();
             api.state[field] = getElementValue(modelEl);
-            syncBindings(field);
+            queueSyncBindings(field);
 
             let result = validateElement(modelEl, getRootRules());
             if (result) {
@@ -1589,7 +1616,7 @@
 
         let api = getJsApi();
         api.state[field] = getElementValue(el);
-        syncBindings(field);
+        queueSyncBindings(field);
 
         let result = validateElement(el, getRootRules());
         if (result) {
@@ -1605,7 +1632,7 @@
 
             let api = getJsApi();
             api.state[field] = getElementValue(modelEl);
-            syncBindings(field);
+            queueSyncBindings(field);
 
             let result = validateElement(modelEl, getRootRules());
             if (result) {
@@ -1625,7 +1652,7 @@
 
         let api = getJsApi();
         api.state[field] = getElementValue(el);
-        syncBindings(field);
+        queueSyncBindings(field);
 
         let result = validateElement(el, getRootRules());
         if (result) {

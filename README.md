@@ -2,24 +2,7 @@
 
 Lightvel is a lightweight reactive layer for Laravel Blade pages.
 
-It gives you:
-
-- server-side component actions using plain PHP classes in Blade
-- client-side state helpers for common UI behavior
-- minimal runtime with fast DOM updates
-- simple setup commands
-
-## Author
-
-- Ankur Jha
-- GitHub: https://github.com/ankurjhaaa
-
-## License
-
-This package is open-sourced software licensed under the MIT license.
-See [LICENSE](LICENSE).
-
----
+It keeps Laravel-style request/response flow and adds simple reactive state in Blade.
 
 ## Installation
 
@@ -28,239 +11,136 @@ composer require lightvel/lightvel
 php artisan lightvel:install
 ```
 
-`lightvel:install` publishes:
-
-- `config/lightvel.php`
-- `public/vendor/lightvel/lightvel.js`
-
----
-
-## Quick Start
-
-### 1) Create layout
-
-```bash
-php artisan lightvel:layout app
-```
-
-Creates:
-
-```text
-resources/views/layouts/app.blade.php
-```
-
-### 2) Create page
-
-```bash
-php artisan make:lightvel pages::home
-```
-
-Creates:
-
-```text
-resources/views/pages/home.blade.php
-```
-
-### 3) Add route (GET + POST)
-
-Lightvel actions use POST on the same URL.
+## Route Style
 
 ```php
 use Illuminate\Support\Facades\Route;
 
-Route::match(['GET', 'POST'], '/', function () {
-    return view('pages.home');
-});
+Route::lightvel('/', 'pages.home')->name('home');
 ```
 
-### 4) Ensure layout has `@lightScripts`
-
-```blade
-<meta name="csrf-token" content="{{ csrf_token() }}">
-...
-@lightScripts
-```
-
----
-
-## Server-side Component Example
+## Basic Page
 
 ```blade
 @php
 use Lightvel\Component;
 use Lightvel\Layout;
+use Illuminate\Http\Request;
 
 new #[Layout('app')] class extends Component {
-    public $count = 0;
+    public function lightvel(): array
+    {
+        return [
+            'count' => 0,
+            'message' => '',
+        ];
+    }
 
-    public function increment() { $this->count++; }
-    public function decrement() { $this->count--; }
+    public function increment(Request $request): array
+    {
+        $count = (int) $request->input('count', 0) + 1;
+        return ['count' => $count];
+    }
 };
 @endphp
 
-<div>
-    <button light:click="decrement">-</button>
-    <span light:bind="count">{{ $count }}</span>
+<div light:state='{"count":0,"message":""}'>
     <button light:click="increment">+</button>
+    <span light:text="count"></span>
 </div>
 ```
 
----
+## Supported Directives (Current)
 
-## Directives
+These directives are currently mapped and supported in this package:
 
-### Server directives
+- `light:state`
+- `light:model`
+- `light:model.live`
+- `light:click`
+- `light:submit`
+- `light:text`
+- `light:if`
+- `light:show`
+- `light:for`
+- `light:class`
+- `light:const`
+- `light:function`
+- `light:rules`
+- `light:debounce`
+- `light:error`
+- `light:error-message`
+- `light:navigate`
 
-- `light:model="field"` → bind input value to client state key
-- `light:model.live="field"` → same as `light:model`, plus live server call using nearest `light:submit` form action
-- `light:click="method"` → call server method
-- `light:submit="method"` → submit form to server method
-- `light:bind="field"` → update text content from server state
-- `light:html="field"` → update HTML content from server state
-- `light:navigate` on `<a>` → SPA-like navigation without full refresh
-- `light:error="field"` → render first validation error for field
-- `light:error-message="Text"` → custom fallback message
+## Validation Flow
 
-### Client directives
+Lightvel validation runs in 2 steps:
 
-- `light:js:init="{...}"` → initialize client state
-- `light:js:model="field"` → bind input to client state
-- `light:js:bind="field"` → bind text to client state
-- `light:js:html="field"` → bind HTML to client state
-- `light:js:click="action(...)"` → call client action
-- `light:js:submit="action(...)"` → call client action on submit
-- `light:js:show="expr"` → show/hide based on expression
-- `light:js:class="{'class-name': expr}"` → conditional class toggling
-- `light:js:rules="required|min:3"` → client-side validation rules
+1. **Client-side (live)** using `light:rules` for quick checks.
+2. **Server-side (submit/live action)** using Laravel validation for final checks like `unique`, `exists`, etc.
 
----
-
-## Built-in Client Actions
-
-`light:js:click` supports these built-ins:
-
-- `toggle(field)`
-- `inc(field, step)`
-- `dec(field, step)`
-
-Example:
+### Client-side Example
 
 ```blade
-<div light:js:init="{'count': 0, 'open': false}">
-    <button light:js:click="dec(count, 5)">-5</button>
-    <span light:js:bind="count"></span>
-    <button light:js:click="inc(count, 5)">+5</button>
-
-    <button light:js:click="toggle(open)">Toggle</button>
-    <div light:js:show="open">Visible when open is true</div>
-</div>
+<input name="name" light:model="name" light:rules="required|min:3|max:100" />
+<span light:error="name"></span>
 ```
 
----
-
-## Validation
-
-Use Laravel-style rules on component:
-
-```php
-protected $rules = [
-    'name' => 'required|min:3',
-    'email' => 'required|email',
-];
-```
-
-Run on action (Request style):
+### Server-side Example
 
 ```php
 use Illuminate\Http\Request;
 
-public function save(Request $request)
+public function store(Request $request): array
 {
     $validated = $request->validate([
-        'name' => ['required', 'min:3'],
-        'email' => ['required', 'email'],
+        'name' => ['required', 'min:3', 'max:100'],
+        'email' => ['required', 'email', 'unique:users,email'],
     ]);
 
-    // process...
+    // Save and return updated state
+    return ['message' => 'Saved'];
 }
 ```
 
-Blade usage:
+Server validation errors are rendered in the same `light:error` field slots.
 
-```blade
-<input light:model="name" light:js:rules="required|min:3">
-<span light:error="name"></span>
-```
+## `light:model` vs `light:model.live`
 
-Validation runs in two layers:
+- `light:model`: only updates client state.
+- `light:model.live`: updates client state and triggers nearest `form[light:submit]` action (debounced if set).
 
-1. Client-side (fast block before request)
-2. Server-side (authoritative Laravel validation)
+## Performance Notes
 
----
+- Input syncing is frame-batched to reduce typing lag.
+- Prefer `light:model.live` only where live server interaction is needed.
+- Keep heavy `light:for` sections scoped to only required state keys.
 
-## Navigation
-
-Use `light:navigate` on internal links:
-
-```blade
-<a href="/" light:navigate>Home</a>
-<a href="/about" light:navigate>About</a>
-```
-
-Features:
-
-- no full page reload
-- browser history support (`back`/`forward`)
-- top progress bar
-
-Progress bar color is configurable:
-
-```env
-LIGHTVEL_PROGRESS_BAR_COLOR="#22c55e"
-```
-
----
-
-## Configuration
-
-`config/lightvel.php`:
-
-- `default_layout` → fallback layout name
-- `layout_folder` → layout folder under `resources/views`
-- `view_root` → optional subfolder under `resources/views` for generated pages
-- `script_path` → runtime JS path fallback
-- `progress_bar_color` → navigation progress bar color
-
----
-
-## Common Troubleshooting
-
-### 405 Method Not Allowed on `light:click`
-
-Route must allow POST:
-
-```php
-Route::match(['GET', 'POST'], '/your-page', fn () => view('...'));
-```
+## Troubleshooting
 
 ### Action not firing
 
-Check layout has:
+Ensure layout has:
 
-- `<meta name="csrf-token" content="{{ csrf_token() }}">`
-- `@lightScripts`
+```blade
+<meta name="csrf-token" content="{{ csrf_token() }}">
+@lightScripts
+```
 
-### Stale behavior after package update
+### 405 errors
 
-Run:
+Use Lightvel route macro format:
+
+```php
+Route::lightvel('/path', 'pages.example')->name('example');
+```
+
+### After update
 
 ```bash
 php artisan optimize:clear
 ```
 
----
+## License
 
-## Notes
-
-- Recommended page generation command is `php artisan make:lightvel pages::home`.
+MIT
