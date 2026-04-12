@@ -42,11 +42,6 @@ class Directives
             $view = preg_replace('/light:for="([^"]+)"/', 'data-light-for="$1"', $view);
             $view = preg_replace('/light:rules="([^"]+)"/', 'data-light-rules="$1"', $view);
             $view = preg_replace('/light:debounce="([^"]+)"/', 'data-light-debounce="$1"', $view);
-            $view = preg_replace('/light:search="([^"]+)"/', 'data-light-search="$1"', $view);
-            $view = preg_replace('/light:search-min="([^"]+)"/', 'data-light-search-min="$1"', $view);
-            $view = preg_replace('/\s+light:cache="([^"]+)"/', ' data-light-cache="$1"', $view);
-            $view = preg_replace('/\s+light:cache(\s|>)/', ' data-light-cache="true"$1', $view);
-            $view = preg_replace('/light:cache-ttl="([^"]+)"/', 'data-light-cache-ttl="$1"', $view);
 
             $view = preg_replace('/light:error="([^"]+)"/', 'data-light-error="$1"', $view);
             $view = preg_replace('/light:error-message="([^"]+)"/', 'data-light-error-message="$1"', $view);

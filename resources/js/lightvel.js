@@ -511,13 +511,15 @@
     function renderErrors(errors) {
         document.querySelectorAll('[data-light-error]').forEach((el) => {
             let field = el.dataset.lightError;
-            let message = (errors && errors[field] && errors[field][0]) || '';
-
-            if (message && el.dataset.lightErrorMessage) {
-                message = el.dataset.lightErrorMessage;
-            }
+            let messages = (errors && errors[field]) || [];
+            
+            // Join all error messages for this field
+            let message = Array.isArray(messages) ? messages.join(', ') : String(messages);
 
             el.innerText = message || '';
+            el.style.color = message ? '#dc2626' : '';
+            el.style.fontSize = message ? '0.875rem' : '';
+            el.style.marginTop = message ? '0.25rem' : '';
         });
     }
 

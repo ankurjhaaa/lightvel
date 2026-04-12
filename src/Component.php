@@ -3,10 +3,14 @@
 namespace Lightvel;
 
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\ViewErrorBag;
 use Illuminate\Validation\ValidationException;
+use ReflectionException;
+use ReflectionMethod;
+use ReflectionNamedType;
 
 class Component
 {
@@ -263,7 +267,13 @@ class Component
                 && !in_array($action, ['run', 'lightvel'], true)
                 && method_exists($this, $action)
             ) {
-                $result = $this->$action(...$actionArgs);
+                // Check if action method expects Request as first parameter
+                if ($this->actionExpectsRequest($action)) {
+                    $result = $this->$action(request(), ...$actionArgs);
+                } else {
+                    $result = $this->$action(...$actionArgs);
+                }
+                
                 if ($result instanceof JsonResponse) {
                     return $result;
                 }
@@ -285,5 +295,32 @@ class Component
         }
 
         return response()->json((object) []);
+    }
+
+    /**
+     * Check if an action method expects Request as first parameter
+     */
+    private function actionExpectsRequest(string $action): bool
+    {
+        try {
+            $reflection = new ReflectionMethod($this, $action);
+            $params = $reflection->getParameters();
+            
+            if (empty($params)) {
+                return false;
+            }
+            
+            $firstParam = $params[0];
+            $type = $firstParam->getType();
+            
+            if ($type && $type instanceof ReflectionNamedType) {
+                $typeName = $type->getName();
+                return $typeName === Request::class || is_subclass_of($typeName, Request::class);
+            }
+            
+            return false;
+        } catch (ReflectionException $e) {
+            return false;
+        }
     }
 }
