@@ -1115,6 +1115,7 @@
     function update(data, fallbackKey = 'data') {
         let api = getJsApi();
         let payload = normalizeStoredPayload(data, fallbackKey);
+        let debugPayload = payload.__lightvel_debug || null;
 
         if (payload.__lightvel_errors !== undefined) {
             setErrors(payload.__lightvel_errors || {});
@@ -1132,6 +1133,43 @@
 
             if (payload.status === false && payload.message) {
                 setErrors({ __global: [String(payload.message)] });
+            }
+        }
+
+        if (debugPayload && window.LightvelDebug && typeof window.LightvelDebug.update === 'function') {
+            let mergedDebug = { ...debugPayload };
+
+            if (payload.message || payload.status === false || payload.errors) {
+                mergedDebug.messages = Array.isArray(mergedDebug.messages) ? mergedDebug.messages : [];
+                mergedDebug.errors = Array.isArray(mergedDebug.errors) ? mergedDebug.errors : [];
+
+                if (payload.message) {
+                    mergedDebug.messages.unshift({
+                        level: payload.status === false ? 'error' : 'info',
+                        message: String(payload.message),
+                        time: new Date().toISOString(),
+                    });
+                }
+
+                if (payload.errors && typeof payload.errors === 'object') {
+                    Object.entries(payload.errors).forEach(([field, messages]) => {
+                        (Array.isArray(messages) ? messages : [messages]).forEach((message) => {
+                            mergedDebug.errors.unshift({
+                                class: 'ValidationError',
+                                message: field + ': ' + String(message),
+                                file: null,
+                                line: null,
+                                trace: [],
+                            });
+                        });
+                    });
+                }
+            }
+
+            window.LightvelDebug.update(mergedDebug);
+
+            if (payload.status === false || payload.errors) {
+                window.LightvelDebug.show();
             }
         }
 

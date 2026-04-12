@@ -2,6 +2,9 @@
 
 namespace Lightvel\Support\Blade;
 
+use Lightvel\Support\Debug\Collector;
+use Lightvel\Support\Debug\PanelRenderer;
+
 class Compiler
 {
     /**
@@ -48,6 +51,9 @@ class Compiler
             \$__result = \$__lv->run();
 
             \$__data = get_object_vars(\$__lv);
+            if (\$__debug) {
+                \$__debug->captureValue(\$__data);
+            }
             extract(\$__data);
             \$errors = \$__lv->getErrorBag();
             ob_start();
@@ -60,6 +66,8 @@ class Compiler
 
         $view .= "<?php
             \$__content = ob_get_clean();
+
+            \$__debug = config('app.debug') ? \Lightvel\Support\Debug\Collector::boot() : null;
 
             \$__route = request()->route();
             \$__routeAction = \$__route ? \$__route->getAction() : [];
@@ -83,6 +91,10 @@ class Compiler
                 ' data-light-component=\"' . htmlspecialchars(\$__lightvelView, ENT_QUOTES, 'UTF-8') . '\"' .
                 ' data-light-fingerprint=\"' . htmlspecialchars(\$__lightvelFingerprint, ENT_QUOTES, 'UTF-8') . '\"';
 
+            if (\$__debug) {
+                \$__debug->recordView(\$__lightvelView, 0.0);
+            }
+
             \$__dom = '<div data-light-root' . \$__metaAttr . \$__rulesAttr . \$__stateAttr . '>' . \$__content . '</div>';
 
             if (app()->bound('debugbar')) {
@@ -95,18 +107,54 @@ class Compiler
             if (request()->header('X-Light')) {
                 header('Content-Type: application/json');
 
+                \$__debugPayload = null;
+                if (\$__debug) {
+                    \$__debugPayload = \$__debug->payload();
+                }
+
                 if (\$__result instanceof \Illuminate\Http\JsonResponse) {
-                    echo (string) \$__result->getContent();
+                    \$__payload = json_decode((string) \$__result->getContent(), true);
+                    if (!is_array(\$__payload)) {
+                        \$__payload = [];
+                    }
+
+                    if (\$__debug) {
+                        \$__debug->captureValue(\$__payload);
+                    }
+
+                    if (is_array(\$__debugPayload)) {
+                        \$__payload['__lightvel_debug'] = \$__debugPayload;
+                    }
+
+                    echo json_encode(\$__payload);
                     return;
                 }
 
-                echo json_encode(\$__result);
+                \$__payload = is_array(\$__result) ? \$__result : (is_object(\$__result) ? get_object_vars(\$__result) : []);
+
+                if (\$__debug) {
+                    \$__debug->captureValue(\$__payload);
+                }
+
+                if (is_array(\$__debugPayload)) {
+                    \$__payload['__lightvel_debug'] = \$__debugPayload;
+                }
+
+                echo json_encode(\$__payload);
                 return;
             }
 
-            echo view(\$__layoutView, array_merge(\$__layoutParams, [
+            \$__layoutStart = microtime(true);
+            \$__rendered = view(\$__layoutView, array_merge(\$__layoutParams, [
                 'slot' => \$__dom,
             ]))->render();
+
+            if (\$__debug) {
+                \$__debug->recordView(\$__layoutView, (microtime(true) - \$__layoutStart) * 1000);
+                \$__rendered = \Lightvel\Support\Debug\PanelRenderer::inject(\$__rendered, \$__debug->payload());
+            }
+
+            echo \$__rendered;
 
             return;
             ?>";
