@@ -5,8 +5,6 @@ namespace Lightvel\Providers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
-use Lightvel\Support\Debug\Collector;
-use Lightvel\Support\Debug\PanelRenderer;
 
 class RouteServiceProvider extends ServiceProvider
 {
@@ -14,15 +12,7 @@ class RouteServiceProvider extends ServiceProvider
     {
         Route::macro('lightvel', function (string $uri, string $view, array|string|null $methods = null) {
             $handler = function () use ($view) {
-                $collector = config('app.debug') ? Collector::boot() : null;
-                $startedAt = microtime(true);
-
                 $html = view($view)->render();
-
-                if ($collector) {
-                    $collector->recordView($view, (microtime(true) - $startedAt) * 1000);
-                    $html = PanelRenderer::inject($html, $collector->payload());
-                }
 
                 return response($html, 200, [
                     'Content-Type' => 'text/html; charset=UTF-8',
@@ -51,8 +41,6 @@ class RouteServiceProvider extends ServiceProvider
         });
 
         $handler = function (Request $request) {
-            $collector = config('app.debug') ? Collector::boot() : null;
-
             $targetUrl = (string) $request->input('url', url()->current());
             $parsedTarget = parse_url($targetUrl);
             $parsedCurrent = parse_url(url()->current());
@@ -61,10 +49,6 @@ class RouteServiceProvider extends ServiceProvider
                 isset($parsedTarget['host'], $parsedCurrent['host'])
                 && strcasecmp($parsedTarget['host'], $parsedCurrent['host']) !== 0
             ) {
-                if ($collector) {
-                    $collector->error('Invalid target host.');
-                }
-
                 return response()->json([
                     'status' => false,
                     'message' => 'Invalid target host.',
@@ -85,18 +69,6 @@ class RouteServiceProvider extends ServiceProvider
 
             $component = (string) $request->header('X-Light-Component', (string) $request->input('component', ''));
             $fingerprint = (string) $request->header('X-Light-Fingerprint', (string) $request->input('fingerprint', ''));
-
-            if (app()->bound('debugbar')) {
-                try {
-                    app('debugbar')->addMessage('lightvel component ' . ($component ?: 'unknown') . ' #' . ($fingerprint ?: 'n/a'), 'lightvel');
-                } catch (\Throwable $e) {
-                }
-            }
-
-            if ($collector) {
-                $collector->message('Action: ' . ($request->input('action') ?: 'unknown') . ' on ' . $request->method(), 'info');
-                $collector->message('URL: ' . $targetUrl, 'info');
-            }
 
             $server = $request->server->all();
             $server['REQUEST_METHOD'] = 'POST';
@@ -146,31 +118,7 @@ class RouteServiceProvider extends ServiceProvider
                 $response = app()->handle($fallback);
             }
 
-            if ($response instanceof \Illuminate\Http\JsonResponse) {
-                if ($collector) {
-                    $data = $response->getData(true);
-
-                    if (is_array($data)) {
-                        $data['__lightvel_debug'] = $collector->payload();
-                        return response()->json($data, $response->getStatusCode(), $response->headers->all());
-                    }
-                }
-
-                return $response;
-            }
-
-            $content = $response->getContent();
-            $data = is_string($content) && !empty($content) ? json_decode($content, true) : [];
-
-            if (!is_array($data)) {
-                $data = [];
-            }
-
-            if ($collector) {
-                $data['__lightvel_debug'] = $collector->payload();
-            }
-
-            return response()->json($data);
+            return $response;
         
         };
 
