@@ -83,18 +83,7 @@ class Compiler
                 ' data-light-component=\"' . htmlspecialchars(\$__lightvelView, ENT_QUOTES, 'UTF-8') . '\"' .
                 ' data-light-fingerprint=\"' . htmlspecialchars(\$__lightvelFingerprint, ENT_QUOTES, 'UTF-8') . '\"';
 
-            if (\$__debug) {
-                \$__debug->recordView(\$__lightvelView, 0.0);
-            }
-
             \$__dom = '<div data-light-root' . \$__metaAttr . \$__rulesAttr . \$__stateAttr . '>' . \$__content . '</div>';
-
-            if (app()->bound('debugbar')) {
-                try {
-                    app('debugbar')->addMessage('lightvel component ' . \$__lightvelView . ' #' . \$__lightvelFingerprint, 'lightvel');
-                } catch (\Throwable \$__e) {
-                }
-            }
 
             if (request()->header('X-Light')) {
                 header('Content-Type: application/json');
