@@ -511,15 +511,13 @@
     function renderErrors(errors) {
         document.querySelectorAll('[data-light-error]').forEach((el) => {
             let field = el.dataset.lightError;
-            let messages = (errors && errors[field]) || [];
-            
-            // Join all error messages for this field
-            let message = Array.isArray(messages) ? messages.join(', ') : String(messages);
+            let message = (errors && errors[field] && errors[field][0]) || '';
+
+            if (message && el.dataset.lightErrorMessage) {
+                message = el.dataset.lightErrorMessage;
+            }
 
             el.innerText = message || '';
-            el.style.color = message ? '#dc2626' : '';
-            el.style.fontSize = message ? '0.875rem' : '';
-            el.style.marginTop = message ? '0.25rem' : '';
         });
     }
 
@@ -1148,6 +1146,36 @@
         return null;
     }
 
+    function triggerLiveModelAction(modelEl) {
+        if (!modelEl || !modelEl.hasAttribute('data-light-model-live')) {
+            return;
+        }
+
+        let form = modelEl.closest('form[data-light-submit]');
+        if (!form) {
+            return;
+        }
+
+        if (!validateScope(form)) {
+            return;
+        }
+
+        let action = form.dataset.lightSubmit;
+        if (!action) {
+            return;
+        }
+
+        let data = {
+            ...collect(form),
+            ...Object.fromEntries(new FormData(form).entries()),
+        };
+
+        call(action, data, {
+            debounceMs: getElementDebounceMs(modelEl),
+            debounceKey: `model-live:${action}`,
+        });
+    }
+
     function sendLightAction(action, params = {}, options = {}) {
         let csrfToken = document.querySelector('meta[name=csrf-token]')?.content || '';
         let root = document.querySelector('[data-light-root]');
@@ -1504,46 +1532,6 @@
         });
     });
 
-    document.addEventListener('input', (e) => {
-        let el = e.target.closest('[data-light-search]');
-        if (!el) return;
-
-        let actionExpr = el.dataset.lightSearch;
-        if (!actionExpr) return;
-
-        let parsed = parse(actionExpr);
-        if (!parsed.action) return;
-
-        let query = getElementValue(el);
-        let minChars = Number(el.dataset.lightSearchMin || 0);
-        let queryLength = String(query ?? '').trim().length;
-
-        if (!isNaN(minChars) && queryLength < minChars && queryLength > 0) {
-            return;
-        }
-
-        if (el.dataset.lightModel) {
-            let api = getJsApi();
-            api.state[el.dataset.lightModel] = query;
-            syncBindings(el.dataset.lightModel);
-        }
-
-        let cacheEnabled = parseBoolean(el.dataset.lightCache, true);
-        let cacheTtlMs = parseDurationMs(el.dataset.lightCacheTtl, 10000);
-        let debounceMs = parseDurationMs(el.dataset.lightDebounce, 300);
-        let args = [query, ...(parsed.args || [])];
-
-        call(parsed.action, args, {
-            debounceMs,
-            debounceKey: `search:${parsed.action}`,
-            cancelKey: `search:${parsed.action}`,
-            cache: cacheEnabled,
-            cacheTtlMs,
-            cacheKey: `search:${parsed.action}:${JSON.stringify(args)}`,
-            refreshCache: false,
-        });
-    });
-
     document.addEventListener('submit', (e) => {
         let f = e.target.closest('[data-light-js-submit]');
         if (!f) return;
@@ -1588,6 +1576,8 @@
                 setFieldErrors(result.field, result.errors);
             }
 
+            triggerLiveModelAction(modelEl);
+
             return;
         }
 
@@ -1621,6 +1611,8 @@
             if (result) {
                 setFieldErrors(result.field, result.errors);
             }
+
+            triggerLiveModelAction(modelEl);
 
             return;
         }

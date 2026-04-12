@@ -8,7 +8,6 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\ViewErrorBag;
 use Illuminate\Validation\ValidationException;
-use ReflectionException;
 use ReflectionMethod;
 use ReflectionNamedType;
 
@@ -256,6 +255,7 @@ class Component
                 $actionArgs = $params;
             } else {
                 $this->setState($params);
+                request()->merge($params);
                 $actionArgs = [];
             }
         }
@@ -267,13 +267,7 @@ class Component
                 && !in_array($action, ['run', 'lightvel'], true)
                 && method_exists($this, $action)
             ) {
-                // Check if action method expects Request as first parameter
-                if ($this->actionExpectsRequest($action)) {
-                    $result = $this->$action(request(), ...$actionArgs);
-                } else {
-                    $result = $this->$action(...$actionArgs);
-                }
-                
+                $result = $this->invokeAction($action, $actionArgs);
                 if ($result instanceof JsonResponse) {
                     return $result;
                 }
@@ -297,30 +291,44 @@ class Component
         return response()->json((object) []);
     }
 
-    /**
-     * Check if an action method expects Request as first parameter
-     */
-    private function actionExpectsRequest(string $action): bool
+    protected function invokeAction(string $action, array $actionArgs): mixed
     {
-        try {
-            $reflection = new ReflectionMethod($this, $action);
-            $params = $reflection->getParameters();
-            
-            if (empty($params)) {
-                return false;
-            }
-            
-            $firstParam = $params[0];
-            $type = $firstParam->getType();
-            
-            if ($type && $type instanceof ReflectionNamedType) {
-                $typeName = $type->getName();
-                return $typeName === Request::class || is_subclass_of($typeName, Request::class);
-            }
-            
-            return false;
-        } catch (ReflectionException $e) {
-            return false;
+        $reflection = new ReflectionMethod($this, $action);
+        $parameters = $reflection->getParameters();
+
+        if (empty($parameters)) {
+            return $this->$action(...$actionArgs);
         }
+
+        $resolvedArgs = [];
+        $argIndex = 0;
+
+        foreach ($parameters as $parameter) {
+            $type = $parameter->getType();
+
+            if ($type instanceof ReflectionNamedType) {
+                $typeName = $type->getName();
+
+                if ($typeName === Request::class || is_subclass_of($typeName, Request::class)) {
+                    $resolvedArgs[] = request();
+                    continue;
+                }
+            }
+
+            if (array_key_exists($argIndex, $actionArgs)) {
+                $resolvedArgs[] = $actionArgs[$argIndex];
+                $argIndex++;
+                continue;
+            }
+
+            if ($parameter->isDefaultValueAvailable()) {
+                $resolvedArgs[] = $parameter->getDefaultValue();
+                continue;
+            }
+
+            $resolvedArgs[] = null;
+        }
+
+        return $this->$action(...$resolvedArgs);
     }
 }

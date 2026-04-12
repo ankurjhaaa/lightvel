@@ -111,7 +111,8 @@ new #[Layout('app')] class extends Component {
 
 ### Server directives
 
-- `light:model="field"` → bind input value to server property
+- `light:model="field"` → bind input value to client state key
+- `light:model.live="field"` → same as `light:model`, plus live server call using nearest `light:submit` form action
 - `light:click="method"` → call server method
 - `light:submit="method"` → submit form to server method
 - `light:bind="field"` → update text content from server state
@@ -168,12 +169,19 @@ protected $rules = [
 ];
 ```
 
-Run on action:
+Run on action (Request style):
 
 ```php
-public function save()
+use Illuminate\Http\Request;
+
+public function save(Request $request)
 {
-    $this->validate();
+    $validated = $request->validate([
+        'name' => ['required', 'min:3'],
+        'email' => ['required', 'email'],
+    ]);
+
+    // process...
 }
 ```
 

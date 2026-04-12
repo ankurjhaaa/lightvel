@@ -17,7 +17,8 @@ class Directives
                 return preg_replace('/\{\{\s*light\.([A-Za-z_][A-Za-z0-9_\.\->]*)\s*\}\}/', '$1', $expression);
             };
 
-            $view = preg_replace('/light:model="([^"]+)"/', 'name="$1" value="<?php echo $$1 ?? \'\' ?>" data-light-model="$1"', $view);
+            $view = preg_replace('/light:model\.live="([^"]+)"/', 'data-light-model="$1" data-light-model-live="true"', $view);
+            $view = preg_replace('/light:model="([^"]+)"/', 'data-light-model="$1"', $view);
             $view = preg_replace_callback('/light:click="([^"]+)"/', function ($match) use ($normalizeLightExpr) {
                 return 'data-light-click="' . $normalizeLightExpr($match[1]) . '"';
             }, $view);
