@@ -118,7 +118,38 @@ class RouteServiceProvider extends ServiceProvider
                 $response = app()->handle($fallback);
             }
 
-            return $response;
+            if ($response instanceof \Illuminate\Http\JsonResponse) {
+                return $response;
+            }
+
+            $status = $response->getStatusCode();
+            $contentType = strtolower((string) $response->headers->get('Content-Type', ''));
+            $content = (string) $response->getContent();
+
+            if ($content !== '' && str_contains($contentType, 'application/json')) {
+                $decoded = json_decode($content, true);
+
+                if (is_array($decoded)) {
+                    return response()->json($decoded, $status);
+                }
+            }
+
+            if ($content !== '') {
+                $decoded = json_decode($content, true);
+
+                if (is_array($decoded)) {
+                    return response()->json($decoded, $status);
+                }
+            }
+
+            if ($status >= 400) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Lightvel action failed.',
+                ], $status);
+            }
+
+            return response()->json([], $status);
         
         };
 
