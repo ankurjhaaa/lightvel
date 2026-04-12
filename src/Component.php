@@ -12,6 +12,7 @@ class Component
 {
     protected ?ViewErrorBag $errorBag = null;
     protected array $lightState = [];
+    protected array $previousState = [];
 
     protected function bootLightvel(): void
     {
@@ -66,6 +67,21 @@ class Component
                 $this->$key = $value;
             }
         }
+    }
+
+    public function getDeltaState(): array
+    {
+        $current = $this->getValidationData();
+        $delta = [];
+
+        foreach ($current as $key => $value) {
+            if (!isset($this->previousState[$key]) || $this->previousState[$key] !== $value) {
+                $delta[$key] = $value;
+            }
+        }
+
+        $this->previousState = $current;
+        return $delta;
     }
 
     public function state(?string $key = null, mixed $default = null): mixed

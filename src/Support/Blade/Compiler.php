@@ -94,13 +94,14 @@ class Compiler
                         \$__payload = [];
                     }
 
-                    echo json_encode(\$__payload);
+                    \$__deltaState = \$__lv->getDeltaState();
+                    \$__response = array_merge(\$__deltaState, \$__payload);
+                    echo json_encode(\$__response);
                     return;
                 }
 
-                \$__payload = is_array(\$__result) ? \$__result : (is_object(\$__result) ? get_object_vars(\$__result) : []);
-
-                echo json_encode(\$__payload);
+                \$__deltaState = \$__lv->getDeltaState();
+                echo json_encode(\$__deltaState);
                 return;
             }
 

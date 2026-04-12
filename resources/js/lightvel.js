@@ -1037,13 +1037,28 @@
         syncBindings();
     }
 
+    let __actionDebounceTimers = {};
+    let __actionDebounceDelay = 50;
+
     function call(action, params = {}) {
+        let debounceKey = action + ':' + JSON.stringify(params);
+        
+        if (__actionDebounceTimers[debounceKey]) {
+            clearTimeout(__actionDebounceTimers[debounceKey]);
+        }
+        
+        __actionDebounceTimers[debounceKey] = setTimeout(() => {
+            delete __actionDebounceTimers[debounceKey];
+            sendLightAction(action, params);
+        }, __actionDebounceDelay);
+    }
+
+    function sendLightAction(action, params = {}) {
         let csrfToken = document.querySelector('meta[name=csrf-token]')?.content || '';
         let root = document.querySelector('[data-light-root]');
         let endpoint = root?.dataset.lightEndpoint || getConfig().messageEndpoint || '/lightvel/message';
         let component = root?.dataset.lightComponent || '';
         let fingerprint = root?.dataset.lightFingerprint || '';
-
 
         fetch(endpoint, {
             method: 'POST',
@@ -1113,6 +1128,9 @@
                 });
             });
     }
+
+    window.Lightvel = window.Lightvel || {};
+    window.Lightvel.debounceDelay = __actionDebounceDelay;
 
     function update(data, fallbackKey = 'data') {
         let api = getJsApi();
