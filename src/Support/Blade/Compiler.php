@@ -2,9 +2,6 @@
 
 namespace Lightvel\Support\Blade;
 
-use Lightvel\Support\Debug\Collector;
-use Lightvel\Support\Debug\PanelRenderer;
-
 class Compiler
 {
     /**
@@ -46,16 +43,11 @@ class Compiler
 
             \$__lv = new class extends \\Lightvel\\Component { {$classBody} };
 
-            \$__debug = config('app.debug') ? \\Lightvel\\Support\\Debug\\Collector::boot() : null;
-
             {$layoutBoot}
 
             \$__result = \$__lv->run();
 
             \$__data = get_object_vars(\$__lv);
-            if (\$__debug) {
-                \$__debug->captureValue(\$__data);
-            }
             extract(\$__data);
             \$errors = \$__lv->getErrorBag();
             ob_start();
@@ -107,23 +99,10 @@ class Compiler
             if (request()->header('X-Light')) {
                 header('Content-Type: application/json');
 
-                \$__debugPayload = null;
-                if (\$__debug) {
-                    \$__debugPayload = \$__debug->payload();
-                }
-
                 if (\$__result instanceof \Illuminate\Http\JsonResponse) {
                     \$__payload = json_decode((string) \$__result->getContent(), true);
                     if (!is_array(\$__payload)) {
                         \$__payload = [];
-                    }
-
-                    if (\$__debug) {
-                        \$__debug->captureValue(\$__payload);
-                    }
-
-                    if (is_array(\$__debugPayload)) {
-                        \$__payload['__lightvel_debug'] = \$__debugPayload;
                     }
 
                     echo json_encode(\$__payload);
@@ -132,27 +111,13 @@ class Compiler
 
                 \$__payload = is_array(\$__result) ? \$__result : (is_object(\$__result) ? get_object_vars(\$__result) : []);
 
-                if (\$__debug) {
-                    \$__debug->captureValue(\$__payload);
-                }
-
-                if (is_array(\$__debugPayload)) {
-                    \$__payload['__lightvel_debug'] = \$__debugPayload;
-                }
-
                 echo json_encode(\$__payload);
                 return;
             }
 
-            \$__layoutStart = microtime(true);
             \$__rendered = view(\$__layoutView, array_merge(\$__layoutParams, [
                 'slot' => \$__dom,
             ]))->render();
-
-            if (\$__debug) {
-                \$__debug->recordView(\$__layoutView, (microtime(true) - \$__layoutStart) * 1000);
-                \$__rendered = \Lightvel\Support\Debug\PanelRenderer::inject(\$__rendered, \$__debug->payload());
-            }
 
             echo \$__rendered;
 
