@@ -46,6 +46,8 @@ class Compiler
 
             \$__lv = new class extends \\Lightvel\\Component { {$classBody} };
 
+            \$__debug = config('app.debug') ? \\Lightvel\\Support\\Debug\\Collector::boot() : null;
+
             {$layoutBoot}
 
             \$__result = \$__lv->run();
@@ -66,8 +68,6 @@ class Compiler
 
         $view .= "<?php
             \$__content = ob_get_clean();
-
-            \$__debug = config('app.debug') ? \Lightvel\Support\Debug\Collector::boot() : null;
 
             \$__route = request()->route();
             \$__routeAction = \$__route ? \$__route->getAction() : [];
