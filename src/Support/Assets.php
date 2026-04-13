@@ -16,10 +16,13 @@ class Assets
         $progressColor = config('lightvel.progress_bar_color', '#111827');
         $messageEndpoint = config('lightvel.message_endpoint', '/lightvel/message');
         $boot = 'window.Lightvel = window.Lightvel || {};' .
+            'document.documentElement.setAttribute("data-light-booting", "true");' .
             'window.Lightvel.progressBarColor = ' . json_encode($progressColor) . ';' .
             'window.Lightvel.messageEndpoint = ' . json_encode($messageEndpoint) . ';';
+        $bootStyles = '<style>[data-light-booting] [data-light-if], [data-light-booting] [data-light-show]{display:none !important;}</style>';
 
-        return '<script>' . $boot . '</script>' . PHP_EOL
+        return $bootStyles . PHP_EOL
+            . '<script>' . $boot . '</script>' . PHP_EOL
             . '<script>' . PHP_EOL . file_get_contents($path) . PHP_EOL . '</script>';
     }
 }
