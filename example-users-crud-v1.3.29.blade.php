@@ -41,51 +41,42 @@ new #[Layout('app')] class extends Component {
         ];
     }
 
-    public function store(Request $request): array
-    {
-        $validated = $request->validate([
-            'name' => 'required|min:3|max:100',
-            'email' => 'required|email|unique:users,email',
-            'password' => 'required|min:6',
-        ]);
-
-        \App\Models\User::create([
-            'name' => $validated['name'],
-            'email' => $validated['email'],
-            'password' => bcrypt($validated['password']),
-        ]);
-
-        return [
-            'users' => $this->usersQuery()->limit(10)->get(),
-            'showModal' => false,
-            'editingId' => null,
-            'name' => '',
-            'email' => '',
-            'password' => '',
-            'message' => 'User created successfully',
-        ];
-    }
-
-    public function update(Request $request): array
+    public function saveUser(Request $request): array
     {
         $id = (int) $request->input('editingId');
-        $user = \App\Models\User::find($id);
-
-        if (! $user) {
-            return ['message' => 'User not found'];
-        }
+        $emailRule = $id > 0
+            ? 'required|email|unique:users,email,' . $id
+            : 'required|email|unique:users,email';
 
         $validated = $request->validate([
             'name' => 'required|min:3|max:100',
-            'email' => 'required|email|unique:users,email,' . $id,
+            'email' => $emailRule,
             'password' => 'required|min:6',
         ]);
 
-        $user->update([
-            'name' => $validated['name'],
-            'email' => $validated['email'],
-            'password' => bcrypt($validated['password']),
-        ]);
+        if ($id > 0) {
+            $user = \App\Models\User::find($id);
+
+            if (! $user) {
+                return ['message' => 'User not found'];
+            }
+
+            $user->update([
+                'name' => $validated['name'],
+                'email' => $validated['email'],
+                'password' => bcrypt($validated['password']),
+            ]);
+
+            $message = 'User updated successfully';
+        } else {
+            \App\Models\User::create([
+                'name' => $validated['name'],
+                'email' => $validated['email'],
+                'password' => bcrypt($validated['password']),
+            ]);
+
+            $message = 'User created successfully';
+        }
 
         return [
             'users' => $this->usersQuery()->limit(10)->get(),
@@ -94,7 +85,7 @@ new #[Layout('app')] class extends Component {
             'name' => '',
             'email' => '',
             'password' => '',
-            'message' => 'User updated successfully',
+            'message' => $message,
         ];
     }
 
@@ -149,7 +140,7 @@ new #[Layout('app')] class extends Component {
                 </tr>
             </thead>
             <tbody>
-                <tr light:for="users|@user">
+                <tr light:for="user in users">
                     <td class="border-t border-gray-200 px-6 py-4 text-sm text-gray-900" light:text="user.name"></td>
                     <td class="border-t border-gray-200 px-6 py-4 text-sm text-gray-500" light:text="user.email"></td>
                     <td class="border-t border-gray-200 px-6 py-4 text-sm text-gray-500" light:text="user.created_at"></td>
@@ -203,7 +194,7 @@ new #[Layout('app')] class extends Component {
                 </h2>
             </div>
 
-            <form light:submit="editingId ? 'update' : 'store'" class="space-y-4 px-6 py-4">
+            <form light:submit="saveUser" class="space-y-4 px-6 py-4">
                 <input type="hidden" light:model="editingId" />
 
                 <div>
