@@ -1694,6 +1694,6 @@
     });
 
     initJsState(document);
-    renderErrors(getJsApi().errors || {});
     document.documentElement.removeAttribute('data-light-booting');
+    renderErrors(getJsApi().errors || {});
 })();
