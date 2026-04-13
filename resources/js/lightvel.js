@@ -672,7 +672,7 @@
         return out;
     }
 
-    function syncBindings(key) {
+    function syncBindings(key, full = true) {
         if (key) {
             syncJsBindings(key);
         } else {
@@ -681,8 +681,11 @@
         }
 
         syncLightTextBindings(key);
-        syncLightConditionals();
-        renderLightForTemplates();
+
+        if (full) {
+            syncLightConditionals();
+            renderLightForTemplates();
+        }
     }
 
     let __pendingSyncFrame = null;
@@ -708,7 +711,7 @@
                 return;
             }
 
-            keys.forEach((stateKey) => syncBindings(stateKey));
+            keys.forEach((stateKey) => syncBindings(stateKey, false));
         });
     }
 
@@ -1028,6 +1031,17 @@
         });
     }
 
+    function isInlineAssignmentExpression(raw) {
+        if (!raw || typeof raw !== 'string') {
+            return false;
+        }
+
+        let expr = raw.trim();
+        if (!expr) return false;
+
+        return expr.includes('=');
+    }
+
     function normalizeStoredPayload(payload, fallbackKey = 'data') {
         if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
             return payload;
@@ -1063,13 +1077,19 @@
 
     function invokeCustomFunction(name, args = [], context = {}) {
         let fn = window[name] || window.Lightvel?.functions?.[name];
+        let api = getJsApi();
 
         if (typeof fn !== 'function') {
+            if (isInlineAssignmentExpression(name)) {
+                applyFunctionAssignments(name, api);
+                queueSyncBindings();
+                return;
+            }
+
             console.warn('Lightvel function not found:', name);
             return;
         }
 
-        let api = getJsApi();
         let result = fn(...args, {
             event: context.event || null,
             el: context.el || null,
@@ -1335,13 +1355,16 @@
     function update(data, fallbackKey = 'data') {
         let api = getJsApi();
         let payload = normalizeStoredPayload(data, fallbackKey);
+        let hasFieldErrors = false;
 
 
         if (payload.__lightvel_errors !== undefined) {
             setErrors(payload.__lightvel_errors || {});
+            hasFieldErrors = !!(payload.__lightvel_errors && Object.keys(payload.__lightvel_errors).length);
             delete payload.__lightvel_errors;
         } else if (payload.errors && typeof payload.errors === 'object') {
             setErrors(payload.errors || {});
+            hasFieldErrors = !!Object.keys(payload.errors || {}).length;
         }
 
         if (Object.prototype.hasOwnProperty.call(payload, 'message')) {
@@ -1352,7 +1375,9 @@
             api.state.status = payload.status;
 
             if (payload.status === false && payload.message) {
-                setErrors({ __global: [String(payload.message)] });
+                if (!hasFieldErrors) {
+                    setErrors({ __global: [String(payload.message)] });
+                }
             }
         }
 
@@ -1521,6 +1546,14 @@
         }
 
         let api = getJsApi();
+        let rawFunctionExpr = el.dataset.lightFunction || '';
+
+        if (isInlineAssignmentExpression(rawFunctionExpr)) {
+            applyFunctionAssignments(rawFunctionExpr, api);
+            queueSyncBindings();
+            return;
+        }
+
         let parsed = parse(el.dataset.lightFunction);
         let resolvedArgs = (parsed.args || []).map((arg) => evaluateLightExpression(arg, api.state));
 

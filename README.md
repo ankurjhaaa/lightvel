@@ -59,6 +59,7 @@ These directives are currently mapped and supported in this package:
 - `light:model.live`
 - `light:click`
 - `light:submit`
+- `light:function`
 - `light:text`
 - `light:if`
 - `light:show`
@@ -109,6 +110,55 @@ Server validation errors are rendered in the same `light:error` field slots.
 
 - `light:model`: only updates client state.
 - `light:model.live`: updates client state and triggers nearest `form[light:submit]` action (debounced if set).
+
+## Client-only actions
+
+Use `light:function` when a button should only update client state and must not hit the server.
+
+You can use it in 2 ways:
+
+1. **Inline assignment mode (same-line HTML, no script required)**
+2. **Named custom function mode (via `window.Lightvel.functions`)**
+
+### 1) Inline assignment mode
+
+```blade
+<button light:function="editingId=user.id, name=user.name, email=user.email, password=''">
+    Edit
+</button>
+```
+
+Rules:
+
+- Use `key=value` pairs
+- Multiple updates separated by comma
+- Right side can use current state vars, scoped loop vars (`user.name`), strings, numbers, booleans
+- This mode is fully client-side (no server hit)
+
+### 2) Named custom function mode
+
+Example:
+
+```blade
+<button light:function="openEdit(user.id, user.name, user.email)">Edit</button>
+```
+
+Define it once in the browser:
+
+```html
+<script>
+window.Lightvel = window.Lightvel || {};
+window.Lightvel.functions = window.Lightvel.functions || {};
+window.Lightvel.functions.openEdit = (id, name, email, { set }) => {
+    set('editingId', id);
+    set('name', name);
+    set('email', email);
+    set('password', '');
+};
+</script>
+```
+
+That function runs in the browser and can fill inputs from client state. Save/update should still go through `light:submit`.
 
 ## Performance Notes
 
