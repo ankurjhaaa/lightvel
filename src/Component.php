@@ -87,6 +87,19 @@ class Component
         return $delta;
     }
 
+    public function getResponse(mixed $data = null): array
+    {
+        if ($data === null) {
+            return [];
+        }
+
+        if (is_array($data)) {
+            return $data;
+        }
+
+        return [];
+    }
+
     public function state(?string $key = null, mixed $default = null): mixed
     {
         if ($key === null) {
@@ -275,17 +288,18 @@ class Component
                 if ($result !== null) {
                     return response()->json($result);
                 }
+
+                return response()->json((object) []);
             }
         } catch (ValidationException $e) {
             $errors = $this->getErrorBag()->getBag('default')->toArray();
             $errors = empty($errors) ? [] : $errors;
 
-            return [
+            return response()->json([
                 'status' => false,
                 'message' => 'Validation failed',
-                'errors' => $errors,
                 '__lightvel_errors' => $errors,
-            ];
+            ]);
         }
 
         return response()->json((object) []);

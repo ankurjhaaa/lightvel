@@ -106,6 +106,63 @@ public function store(Request $request): array
 
 Server validation errors are rendered in the same `light:error` field slots.
 
+## Action Response Strategies (Minimize Payload)
+
+Since `toArray()` bloats payloads, Lightvel offers 3 strategies:
+
+### 1) Return `null` or nothing
+
+For actions that just persist data but don't need to send state back:
+
+```php
+public function store(Request $request)
+{
+    $validated = $request->validate([
+        'name' => ['required', 'unique:users,name'],
+    ]);
+
+    User::create($validated);
+    
+    // No return = minimal payload, just validation errors if any
+}
+```
+
+### 2) Return only specific keys
+
+Send back only the data that changed:
+
+```php
+public function store(Request $request): array
+{
+    $validated = $request->validate([
+        'name' => ['required', 'unique:users,name'],
+    ]);
+
+    $user = User::create($validated);
+    return ['message' => 'User created', 'lastId' => $user->id];
+}
+```
+
+### 3) Return only delta (changed fields)
+
+For forms, return only fields that differ from initial state:
+
+```php
+public function update(Request $request): array
+{
+    $validated = $request->validate([
+        'name' => ['required', 'unique:users,name,' . auth()->id()],
+    ]);
+
+    auth()->user()->update($validated);
+    
+    // Send back only changed fields
+    return $this->getDeltaState();
+}
+```
+
+All strategies keep validation errors in `light:error` slots automatically.
+
 ## `light:model` vs `light:model.live`
 
 - `light:model`: only updates client state.
