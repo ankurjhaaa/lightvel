@@ -27,7 +27,9 @@ class Directives
             }, $view);
             $view = preg_replace('/light:bind="([^"]+)"/', 'data-light-bind="$1"', $view);
 
-            $view = preg_replace('/light:state="([^"]+)"/', 'data-light-state="$1"', $view);
+            $view = preg_replace_callback('/light:state=("|\')(.*?)\1/', function ($match) {
+                return 'data-light-state="' . $match[2] . '"';
+            }, $view);
             $view = preg_replace('/light:const="([^"]+)"/', 'data-light-const="$1"', $view);
             $view = preg_replace_callback('/light:function="([^"]+)"/', function ($match) use ($normalizeLightExpr) {
                 return 'data-light-function="' . $normalizeLightExpr($match[1]) . '"';

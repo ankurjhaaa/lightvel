@@ -102,7 +102,7 @@ new #[Layout('app')] class extends Component {
 @endphp
 
 <div
-    light:state='{"users":[],"search":"","showModal":false,"editingId":null,"name":"","email":"","password":"","message":""}'
+    light:state="users=[], search='', showModal=false, editingId=null, name='', email='', password='', message=''"
     class="mx-auto max-w-6xl px-4 py-12 sm:px-6 lg:px-8"
 >
     <div class="mb-8 flex items-center justify-between">
