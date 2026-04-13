@@ -74,6 +74,7 @@ class RouteServiceProvider extends ServiceProvider
             $server['REQUEST_METHOD'] = 'POST';
             $server['CONTENT_TYPE'] = 'application/json';
             $server['HTTP_ACCEPT'] = 'application/json';
+            $server['HTTP_X_REQUESTED_WITH'] = 'XMLHttpRequest';
             $server['HTTP_X_LIGHT'] = 'true';
             $server['HTTP_X_LIGHT_FORWARDED'] = 'true';
             $server['HTTP_X_LIGHT_COMPONENT'] = $component;
@@ -91,6 +92,7 @@ class RouteServiceProvider extends ServiceProvider
 
             $forward->headers->set('X-Light', 'true');
             $forward->headers->set('X-Light-Forwarded', 'true');
+            $forward->headers->set('X-Requested-With', 'XMLHttpRequest');
             $forward->headers->set('Accept', 'application/json');
 
             $response = app()->handle($forward);
@@ -113,6 +115,7 @@ class RouteServiceProvider extends ServiceProvider
 
                 $fallback->headers->set('X-Light', 'true');
                 $fallback->headers->set('X-Light-Forwarded', 'true');
+                $fallback->headers->set('X-Requested-With', 'XMLHttpRequest');
                 $fallback->headers->set('Accept', 'application/json');
 
                 $response = app()->handle($fallback);

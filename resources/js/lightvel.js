@@ -1258,6 +1258,7 @@
             headers: {
                 'Content-Type': 'application/json',
                 'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
                 'X-CSRF-TOKEN': csrfToken,
                 'X-Light': 'true',
                 'X-Light-Component': component,
