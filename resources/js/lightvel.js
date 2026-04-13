@@ -240,22 +240,29 @@
         let api = getJsApi();
 
         scope.querySelectorAll('[data-light-state]').forEach((el) => {
-            if (el.hasAttribute('data-light-server-state')) {
-                return;
-            }
-
             let rawState = el.getAttribute('data-light-state');
             if (!rawState) return;
 
             try {
-                let serverState = JSON.parse(rawState);
-                if (typeof serverState === 'object' && serverState !== null) {
-                    Object.entries(serverState).forEach(([key, value]) => {
+                let parsedJson = JSON.parse(rawState);
+                if (typeof parsedJson === 'object' && parsedJson !== null) {
+                    Object.entries(parsedJson).forEach(([key, value]) => {
                         api.state[key] = value;
                     });
+
+                    return;
                 }
             } catch (_) {
-                // ignore invalid state json
+                // fallback to assignment syntax
+            }
+
+            let assignmentState = parseLightAssignments(rawState);
+            Object.entries(assignmentState).forEach(([key, value]) => {
+                api.state[key] = value;
+            });
+
+            if (!Object.keys(assignmentState).length) {
+                // ignore invalid state syntax
             }
         });
 

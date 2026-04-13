@@ -89,9 +89,8 @@ new #[Layout('app')] class extends Component {
         ];
     }
 
-    public function deleteUser(Request $request): array
+    public function deleteUser(int $id): array
     {
-        $id = (int) $request->input('id');
         \App\Models\User::find($id)?->delete();
 
         return [
@@ -154,15 +153,13 @@ new #[Layout('app')] class extends Component {
                                 Edit
                             </button>
 
-                            <form light:submit="deleteUser" class="inline">
-                                <input type="hidden" name="id" light:bind="user.id" />
-                                <button
-                                    type="submit"
-                                    class="rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700"
-                                >
-                                    Delete
-                                </button>
-                            </form>
+                            <button
+                                type="button"
+                                light:click="deleteUser(user.id)"
+                                class="rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700"
+                            >
+                                Delete
+                            </button>
                         </div>
                     </td>
                 </tr>
