@@ -109,7 +109,7 @@ new #[Layout('app')] class extends Component {
         <h1 class="text-4xl font-bold text-gray-900">Users CRUD</h1>
         <button
             type="button"
-            light:function="showModal=true, editingId=null, name='', email='', password=''"
+            light:function="showModal=true, editingId=null, name='', email='', password='', message=''"
             class="rounded-lg bg-indigo-600 px-4 py-2 font-semibold text-white hover:bg-indigo-700"
         >
             + New User
@@ -147,7 +147,7 @@ new #[Layout('app')] class extends Component {
                         <div class="flex justify-end gap-2">
                             <button
                                 type="button"
-                                light:function="showModal=true, editingId=user.id, name=user.name, email=user.email, password=''"
+                                light:function="showModal=true, editingId=user.id, name=user.name, email=user.email, password='', message=''"
                                 class="rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-600"
                             >
                                 Edit
@@ -173,12 +173,11 @@ new #[Layout('app')] class extends Component {
     </div>
 
     <div light:if="showModal" class="fixed inset-0 z-50 flex items-center justify-center">
-        <div class="absolute inset-0 bg-black/40" light:function="showModal=false"></div>
-
+            <div class="absolute inset-0 bg-black/40" light:function="showModal=false, message=''"></div>
         <div class="relative w-full max-w-md rounded-lg bg-white shadow-lg">
             <button
                 type="button"
-                light:function="showModal=false"
+                light:function="showModal=false, message=''"
                 class="absolute right-4 top-4 text-gray-400 hover:text-gray-600"
             >
                 ✕
@@ -237,7 +236,7 @@ new #[Layout('app')] class extends Component {
                 <div class="flex gap-3 pt-4">
                     <button
                         type="button"
-                        light:function="showModal=false"
+                        light:function="showModal=false, message=''"
                         class="flex-1 rounded-lg border border-gray-300 px-4 py-2 font-semibold text-gray-900 hover:bg-gray-50"
                     >
                         Cancel
