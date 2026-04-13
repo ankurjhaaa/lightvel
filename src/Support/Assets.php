@@ -20,8 +20,6 @@ class Assets
             'window.Lightvel.progressBarColor = ' . json_encode($progressColor) . ';' .
             'window.Lightvel.messageEndpoint = ' . json_encode($messageEndpoint) . ';';
         $bootStyles = '<style>'
-            . '[data-light-booting] [data-light-root]{opacity:0 !important; visibility:hidden !important;}'
-            . '[data-light-root]{opacity:1; transition:opacity 120ms ease;}'
             . '[data-light-booting] [data-light-if], [data-light-booting] [data-light-show]{display:none !important;}'
             . '</style>';
 
