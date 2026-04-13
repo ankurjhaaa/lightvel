@@ -239,24 +239,6 @@
     function initJsState(scope = document) {
         let api = getJsApi();
 
-        scope.querySelectorAll('[data-light-server-state]').forEach((el) => {
-            let raw = el.getAttribute('data-light-server-state');
-            if (!raw) return;
-
-            try {
-                let serverState = JSON.parse(raw);
-                if (typeof serverState === 'object' && serverState !== null) {
-                    Object.entries(serverState).forEach(([key, value]) => {
-                        if (api.state[key] === undefined) {
-                            api.state[key] = value;
-                        }
-                    });
-                }
-            } catch (_) {
-                // ignore invalid server state
-            }
-        });
-
         scope.querySelectorAll('[data-light-state]').forEach((el) => {
             if (el.hasAttribute('data-light-server-state')) {
                 return;
@@ -265,21 +247,31 @@
             let rawState = el.getAttribute('data-light-state');
             if (!rawState) return;
 
-            if (rawState.includes('=') || rawState.includes(',')) {
-                return;
-            }
-
             try {
                 let serverState = JSON.parse(rawState);
                 if (typeof serverState === 'object' && serverState !== null) {
                     Object.entries(serverState).forEach(([key, value]) => {
-                        if (api.state[key] === undefined) {
-                            api.state[key] = value;
-                        }
+                        api.state[key] = value;
                     });
                 }
             } catch (_) {
                 // ignore invalid state json
+            }
+        });
+
+        scope.querySelectorAll('[data-light-server-state]').forEach((el) => {
+            let raw = el.getAttribute('data-light-server-state');
+            if (!raw) return;
+
+            try {
+                let serverState = JSON.parse(raw);
+                if (typeof serverState === 'object' && serverState !== null) {
+                    Object.entries(serverState).forEach(([key, value]) => {
+                        api.state[key] = value;
+                    });
+                }
+            } catch (_) {
+                // ignore invalid server state
             }
         });
 
