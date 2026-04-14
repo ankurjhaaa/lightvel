@@ -44,7 +44,7 @@ return [
     | It is rendered by the @lightScripts directive.
     |
     */
-    'script_path' => __DIR__ . '/../resources/js/lightvel.js',
+    'script_path' => env('LIGHTVEL_SCRIPT_PATH'),
 
     /*
     |--------------------------------------------------------------------------
