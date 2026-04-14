@@ -1372,6 +1372,58 @@
         __responseCache = {};
     };
 
+    function refreshCurrentComponent() {
+        let api = getJsApi();
+        let root = document.querySelector('[data-light-root]');
+        let url = window.location.href.split('#')[0];
+        let preservedState = {
+            message: api.state?.message,
+            status: api.state?.status,
+            showModal: api.state?.showModal,
+        };
+
+        return fetch(url, {
+            method: 'GET',
+            headers: {
+                'Accept': 'text/html,application/xhtml+xml',
+                'X-Light': 'true',
+                'X-Light-Refresh': 'true',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+        })
+            .then(async (r) => {
+                if (!r.ok) {
+                    throw new Error('Refresh failed with status ' + r.status);
+                }
+
+                return r.text();
+            })
+            .then((html) => {
+                let wrap = document.createElement('div');
+                wrap.innerHTML = html;
+                let nextRoot = wrap.querySelector('[data-light-root]');
+
+                if (nextRoot && root) {
+                    root.replaceWith(nextRoot);
+                }
+
+                initJsState(document);
+
+                let nextApi = getJsApi();
+                Object.entries(preservedState).forEach(([key, value]) => {
+                    if (value !== undefined) {
+                        nextApi.state[key] = value;
+                    }
+                });
+
+                syncBindings();
+                renderErrors(nextApi.errors || {});
+            })
+            .catch((err) => {
+                console.error('Lightvel patch refresh failed:', err);
+            });
+    }
+
     function findPatchItemId(item) {
         if (!item || typeof item !== 'object') return undefined;
         return item.id;
@@ -1523,6 +1575,9 @@
         if (payload.__patch !== undefined) {
             applyPatchOperations(api, payload.__patch);
             delete payload.__patch;
+
+            refreshCurrentComponent();
+            return;
         }
 
         Object.entries(payload).forEach(([k, v]) => {
