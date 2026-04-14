@@ -1284,6 +1284,16 @@
                     } catch (_) {
                         payload = null;
                     }
+                } else {
+                    try {
+                        let raw = await r.text();
+                        let parsed = JSON.parse(raw);
+                        if (parsed && typeof parsed === 'object') {
+                            payload = parsed;
+                        }
+                    } catch (_) {
+                        payload = null;
+                    }
                 }
 
                 if (!r.ok) {
@@ -1432,6 +1442,20 @@
         let api = getJsApi();
         let payload = normalizeStoredPayload(data, fallbackKey);
         let hasFieldErrors = false;
+
+        if (
+            payload
+            && payload.data
+            && typeof payload.data === 'object'
+            && !Array.isArray(payload.data)
+        ) {
+            payload = {
+                ...payload,
+                ...payload.data,
+            };
+
+            delete payload.data;
+        }
 
 
         if (payload.__lightvel_errors !== undefined) {

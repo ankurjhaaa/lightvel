@@ -10,9 +10,13 @@ class Assets
     public static function scripts(): string
     {
         $published = public_path('vendor/lightvel/lightvel.js');
-        $path = file_exists($published)
-            ? $published
-            : config('lightvel.script_path', __DIR__ . '/../../resources/js/lightvel.js');
+        $defaultPath = config('lightvel.script_path', __DIR__ . '/../../resources/js/lightvel.js');
+        $usePublished = (bool) config('lightvel.use_published_script', false);
+
+        $path = $defaultPath;
+        if ($usePublished && file_exists($published)) {
+            $path = $published;
+        }
         $progressColor = config('lightvel.progress_bar_color', '#111827');
         $messageEndpoint = config('lightvel.message_endpoint', '/lightvel/message');
         $boot = 'window.Lightvel = window.Lightvel || {};' .
