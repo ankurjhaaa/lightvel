@@ -1370,12 +1370,15 @@
     function applyPatchOperations(api, patchData) {
         if (!patchData || typeof patchData !== 'object') return;
 
+        let dirty = false;
+
         Object.entries(patchData).forEach(([resource, actions]) => {
             if (!actions || typeof actions !== 'object') return;
 
             if (!Array.isArray(api.state[resource])) {
                 if (api.state[resource] && typeof api.state[resource] === 'object') {
                     api.state[resource] = Object.values(api.state[resource]);
+                    dirty = true;
                 } else {
                     return;
                 }
@@ -1388,6 +1391,7 @@
                     if (id === undefined || id === null) return true;
                     return !deleteIds.has(String(id));
                 });
+                dirty = true;
             }
 
             if (Array.isArray(actions.update) && actions.update.length) {
@@ -1414,6 +1418,7 @@
 
                     return { ...item, ...updated };
                 });
+                dirty = true;
             }
 
             if (Array.isArray(actions.insert) && actions.insert.length) {
@@ -1434,8 +1439,15 @@
                 });
 
                 api.state[resource] = [...insertItems, ...rest];
+                dirty = true;
+            }
+
+            if (dirty) {
+                api.state[resource] = [...api.state[resource]];
             }
         });
+
+        return dirty;
     }
 
     function update(data, fallbackKey = 'data') {
@@ -1510,7 +1522,7 @@
             api.state[k] = v;
         });
 
-        syncBindings();
+        queueSyncBindings();
     }
 
     function isSameOrigin(url) {
