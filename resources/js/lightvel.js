@@ -1386,8 +1386,6 @@
             method: 'GET',
             headers: {
                 'Accept': 'text/html,application/xhtml+xml',
-                'X-Light': 'true',
-                'X-Light-Refresh': 'true',
                 'X-Requested-With': 'XMLHttpRequest',
             },
         })
@@ -1405,6 +1403,9 @@
 
                 if (nextRoot && root) {
                     root.replaceWith(nextRoot);
+                } else {
+                    window.location.reload();
+                    return;
                 }
 
                 initJsState(document);
@@ -1516,6 +1517,7 @@
         let api = getJsApi();
         let payload = normalizeStoredPayload(data, fallbackKey);
         let hasFieldErrors = false;
+        let hasPatch = false;
 
         if (
             payload
@@ -1575,9 +1577,7 @@
         if (payload.__patch !== undefined) {
             applyPatchOperations(api, payload.__patch);
             delete payload.__patch;
-
-            refreshCurrentComponent();
-            return;
+            hasPatch = true;
         }
 
         Object.entries(payload).forEach(([k, v]) => {
@@ -1588,6 +1588,10 @@
         });
 
         flushSyncBindings();
+
+        if (hasPatch) {
+            refreshCurrentComponent();
+        }
     }
 
     function isSameOrigin(url) {
