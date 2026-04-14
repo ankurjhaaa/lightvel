@@ -1362,7 +1362,14 @@
 
         Object.entries(patchData).forEach(([resource, actions]) => {
             if (!actions || typeof actions !== 'object') return;
-            if (!Array.isArray(api.state[resource])) return;
+
+            if (!Array.isArray(api.state[resource])) {
+                if (api.state[resource] && typeof api.state[resource] === 'object') {
+                    api.state[resource] = Object.values(api.state[resource]);
+                } else {
+                    return;
+                }
+            }
 
             if (Array.isArray(actions.delete) && actions.delete.length) {
                 let deleteIds = new Set(actions.delete.map((id) => String(id)));
@@ -1385,7 +1392,17 @@
                 api.state[resource] = api.state[resource].map((item) => {
                     let id = findPatchItemId(item);
                     if (id === undefined || id === null) return item;
-                    return updatesById.get(String(id)) || item;
+
+                    let updated = updatesById.get(String(id));
+                    if (!updated || typeof updated !== 'object') {
+                        return item;
+                    }
+
+                    if (!item || typeof item !== 'object') {
+                        return updated;
+                    }
+
+                    return { ...item, ...updated };
                 });
             }
 
