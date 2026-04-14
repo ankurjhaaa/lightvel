@@ -1352,6 +1352,65 @@
         __responseCache = {};
     };
 
+    function findPatchItemId(item) {
+        if (!item || typeof item !== 'object') return undefined;
+        return item.id;
+    }
+
+    function applyPatchOperations(api, patchData) {
+        if (!patchData || typeof patchData !== 'object') return;
+
+        Object.entries(patchData).forEach(([resource, actions]) => {
+            if (!actions || typeof actions !== 'object') return;
+            if (!Array.isArray(api.state[resource])) return;
+
+            if (Array.isArray(actions.delete) && actions.delete.length) {
+                let deleteIds = new Set(actions.delete.map((id) => String(id)));
+                api.state[resource] = api.state[resource].filter((item) => {
+                    let id = findPatchItemId(item);
+                    if (id === undefined || id === null) return true;
+                    return !deleteIds.has(String(id));
+                });
+            }
+
+            if (Array.isArray(actions.update) && actions.update.length) {
+                let updatesById = new Map();
+
+                actions.update.forEach((item) => {
+                    let id = findPatchItemId(item);
+                    if (id === undefined || id === null) return;
+                    updatesById.set(String(id), item);
+                });
+
+                api.state[resource] = api.state[resource].map((item) => {
+                    let id = findPatchItemId(item);
+                    if (id === undefined || id === null) return item;
+                    return updatesById.get(String(id)) || item;
+                });
+            }
+
+            if (Array.isArray(actions.insert) && actions.insert.length) {
+                let insertItems = actions.insert.filter((item) => item && typeof item === 'object');
+                if (!insertItems.length) return;
+
+                let insertIds = new Set(
+                    insertItems
+                        .map((item) => findPatchItemId(item))
+                        .filter((id) => id !== undefined && id !== null)
+                        .map((id) => String(id))
+                );
+
+                let rest = api.state[resource].filter((item) => {
+                    let id = findPatchItemId(item);
+                    if (id === undefined || id === null) return true;
+                    return !insertIds.has(String(id));
+                });
+
+                api.state[resource] = [...insertItems, ...rest];
+            }
+        });
+    }
+
     function update(data, fallbackKey = 'data') {
         let api = getJsApi();
         let payload = normalizeStoredPayload(data, fallbackKey);
@@ -1396,6 +1455,11 @@
             renderErrors(getJsApi().errors || {});
 
             return;
+        }
+
+        if (payload.__patch !== undefined) {
+            applyPatchOperations(api, payload.__patch);
+            delete payload.__patch;
         }
 
         Object.entries(payload).forEach(([k, v]) => {

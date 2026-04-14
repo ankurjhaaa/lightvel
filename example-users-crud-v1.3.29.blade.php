@@ -67,26 +67,34 @@ new #[Layout('app')] class extends Component {
                 'password' => bcrypt($validated['password']),
             ]);
 
-            $message = 'User updated successfully';
+            $updatedUser = $user->fresh();
+
+            return [
+                'showModal' => false,
+                'editingId' => null,
+                'name' => '',
+                'email' => '',
+                'password' => '',
+                'message' => 'User updated successfully',
+                ...patch()->update('users', $updatedUser?->toArray() ?? []),
+            ];
         } else {
-            \App\Models\User::create([
+            $user = \App\Models\User::create([
                 'name' => $validated['name'],
                 'email' => $validated['email'],
                 'password' => bcrypt($validated['password']),
             ]);
 
-            $message = 'User created successfully';
+            return [
+                'showModal' => false,
+                'editingId' => null,
+                'name' => '',
+                'email' => '',
+                'password' => '',
+                'message' => 'User created successfully',
+                ...patch()->insert('users', $user->toArray()),
+            ];
         }
-
-        return [
-            'users' => $this->usersQuery()->limit(10)->get(),
-            'showModal' => false,
-            'editingId' => null,
-            'name' => '',
-            'email' => '',
-            'password' => '',
-            'message' => $message,
-        ];
     }
 
     public function deleteUser(int $id): array
@@ -94,8 +102,8 @@ new #[Layout('app')] class extends Component {
         \App\Models\User::find($id)?->delete();
 
         return [
-            'users' => $this->usersQuery()->limit(10)->get(),
             'message' => 'User deleted successfully',
+            ...patch()->delete('users', $id),
         ];
     }
 };
