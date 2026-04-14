@@ -714,6 +714,16 @@
         });
     }
 
+    function flushSyncBindings() {
+        if (__pendingSyncFrame) {
+            cancelAnimationFrame(__pendingSyncFrame);
+            __pendingSyncFrame = null;
+        }
+
+        __pendingSyncKeys.clear();
+        syncBindings();
+    }
+
     function syncLightTextBindings(key) {
         let api = getJsApi();
 
@@ -1522,7 +1532,7 @@
             api.state[k] = v;
         });
 
-        queueSyncBindings();
+        flushSyncBindings();
     }
 
     function isSameOrigin(url) {
