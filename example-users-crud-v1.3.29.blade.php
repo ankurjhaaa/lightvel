@@ -69,6 +69,17 @@ new #[Layout('app')] class extends Component {
 
             $updatedUser = $user->fresh();
 
+            if (! $updatedUser) {
+                return [
+                    'showModal' => false,
+                    'editingId' => null,
+                    'name' => '',
+                    'email' => '',
+                    'password' => '',
+                    'message' => 'User updated successfully',
+                ];
+            }
+
             return [
                 'showModal' => false,
                 'editingId' => null,
@@ -76,7 +87,7 @@ new #[Layout('app')] class extends Component {
                 'email' => '',
                 'password' => '',
                 'message' => 'User updated successfully',
-                ...patch()->update('users', $updatedUser?->toArray() ?? []),
+                ...patch()->update('users', $updatedUser->toArray()),
             ];
         } else {
             $user = \App\Models\User::create([
@@ -99,7 +110,13 @@ new #[Layout('app')] class extends Component {
 
     public function deleteUser(int $id): array
     {
-        \App\Models\User::find($id)?->delete();
+        $deleted = \App\Models\User::find($id)?->delete();
+
+        if (! $deleted) {
+            return [
+                'message' => 'User not found',
+            ];
+        }
 
         return [
             'message' => 'User deleted successfully',
@@ -181,7 +198,7 @@ new #[Layout('app')] class extends Component {
     </div>
 
     <div light:if="showModal" class="fixed inset-0 z-50 flex items-center justify-center">
-            <div class="absolute inset-0 bg-black/40" light:function="showModal=false, message=''"></div>
+        <div class="absolute inset-0 bg-black/40" light:function="showModal=false, message=''"></div>
         <div class="relative w-full max-w-md rounded-lg bg-white shadow-lg">
             <button
                 type="button"

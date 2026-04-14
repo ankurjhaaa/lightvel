@@ -9,16 +9,6 @@ new #[Layout('app')] class extends Component {
         return \App\Models\User::query()->latest();
     }
 
-    protected function formatUserRow(\App\Models\User $user): array
-    {
-        return [
-            'id' => $user->id,
-            'name' => $user->name,
-            'email' => $user->email,
-            'created_at' => optional($user->created_at)?->toDateTimeString(),
-        ];
-    }
-
     public function lightvel(): array
     {
         return [
@@ -54,6 +44,14 @@ new #[Layout('app')] class extends Component {
     public function saveUser(Request $request): array
     {
         $id = (int) $request->input('editingId');
+        $resetForm = [
+            'showModal' => false,
+            'editingId' => null,
+            'name' => '',
+            'email' => '',
+            'password' => '',
+        ];
+
         $emailRule = $id > 0
             ? 'required|email|unique:users,email,' . $id
             : 'required|email|unique:users,email';
@@ -81,23 +79,15 @@ new #[Layout('app')] class extends Component {
 
             if (! $updatedUser) {
                 return [
-                    'showModal' => false,
-                    'editingId' => null,
-                    'name' => '',
-                    'email' => '',
-                    'password' => '',
+                    ...$resetForm,
                     'message' => 'User updated successfully',
                 ];
             }
 
             return [
-                'showModal' => false,
-                'editingId' => null,
-                'name' => '',
-                'email' => '',
-                'password' => '',
+                ...$resetForm,
                 'message' => 'User updated successfully',
-                ...patch()->update('users', $this->formatUserRow($updatedUser)),
+                ...patch()->update('users', $updatedUser),
             ];
         } else {
             $user = \App\Models\User::create([
@@ -107,13 +97,9 @@ new #[Layout('app')] class extends Component {
             ]);
 
             return [
-                'showModal' => false,
-                'editingId' => null,
-                'name' => '',
-                'email' => '',
-                'password' => '',
+                ...$resetForm,
                 'message' => 'User created successfully',
-                ...patch()->insert('users', $this->formatUserRow($user)),
+                ...patch()->insert('users', $user),
             ];
         }
     }
