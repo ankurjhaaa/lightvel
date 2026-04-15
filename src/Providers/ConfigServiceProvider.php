@@ -16,5 +16,10 @@ class ConfigServiceProvider extends ServiceProvider
         $this->publishes([
             __DIR__ . '/../../config/lightvel.php' => config_path('lightvel.php'),
         ], 'lightvel-config');
+
+        // Publish AI reference guide to user's project root
+        $this->publishes([
+            __DIR__ . '/../../LIGHTVEL_AI.md' => base_path('LIGHTVEL_AI.md'),
+        ], 'lightvel-ai');
     }
 }

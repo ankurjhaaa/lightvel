@@ -22,7 +22,14 @@ class InstallCommand extends Command
             '--force' => true,
         ]);
 
+        // Publish AI reference guide to project root
+        $this->call('vendor:publish', [
+            '--tag' => 'lightvel-ai',
+            '--force' => true,
+        ]);
+
         $this->info('Lightvel installed.');
+        $this->info('LIGHTVEL_AI.md published to project root (share with AI coding tools).');
 
         return self::SUCCESS;
     }

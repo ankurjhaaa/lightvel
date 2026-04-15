@@ -1,6 +1,35 @@
+/**
+ * Lightvel JS Runtime — Client-side reactive engine.
+ *
+ * Architecture overview:
+ *   1. INIT: On DOMContentLoaded, initJsState() reads data-light-server-state
+ *      and data-light-state attributes to build the reactive state object.
+ *   2. BINDING: syncBindings() updates DOM elements bound via light:text,
+ *      light:show, light:if, light:class, light:for etc.
+ *   3. ACTIONS: Click/submit events trigger sendLightAction() AJAX POST to
+ *      the proxy endpoint. Server returns JSON delta state.
+ *   4. UPDATE: update() merges delta state, applies __patch operations,
+ *      and calls syncBindings() to refresh the DOM.
+ *
+ * Key performance features:
+ *   - Expression cache: compiled Function objects are cached by expression string
+ *   - Batched DOM updates via requestAnimationFrame
+ *   - light:function handles client-side state changes without server round-trip
+ *   - __patch operations for surgical array mutations (insert/update/delete)
+ *
+ * @see Component.php — server-side component that processes actions
+ * @see Compiler.php — generates the data-light-* attributes read here
+ * @see Directives.php — transforms light:* shorthand into data-light-*
+ * @see Assets.php — outputs this script with boot styles
+ */
 (function () {
+    // --- Progress bar (top-of-page loading indicator during AJAX) ---
     let progressEl = null;
     let progressTimer = null;
+
+    // --- Expression cache: avoids recreating Function() objects on every eval ---
+    // Key: expression string, Value: compiled Function
+    let __exprCache = new Map();
 
     function getConfig() {
         return window.Lightvel || {};
@@ -562,6 +591,11 @@
         }
     }
 
+    /**
+     * Evaluate a JS expression with state variable substitution.
+     * Used by light:js:show and light:js:class directives.
+     * State variables are JSON-serialized inline for safe evaluation.
+     */
     function evalJsExpr(expr, state) {
         try {
             let code = expr.replace(/\b([a-zA-Z_$][a-zA-Z0-9_$]*)\b/g, function (match) {
@@ -570,7 +604,13 @@
                 }
                 return Object.prototype.hasOwnProperty.call(state, match) ? JSON.stringify(state[match]) : match;
             });
-            return Function('"use strict"; return (' + code + ')')();
+            // Cache compiled function for this code string
+            let fn = __exprCache.get(code);
+            if (!fn) {
+                fn = Function('"use strict"; return (' + code + ')');
+                __exprCache.set(code, fn);
+            }
+            return fn();
         } catch (_) {
             return false;
         }
@@ -622,6 +662,14 @@
         return normalized.replace(/\blight\./g, '');
     }
 
+    /**
+     * Evaluate a light expression (e.g. "showModal", "users.length > 0")
+     * against the current state. Uses cached compiled Function objects
+     * to avoid recreating closures on every call.
+     *
+     * Called by: syncLightTextBindings, syncLightConditionals, applyConditionalClasses,
+     *            parseLightAssignments, applyScopedBindings
+     */
     function evaluateLightExpression(expr, scopeState = null, extraScope = null) {
         let api = getJsApi();
         let state = Object.assign({}, api.consts || {}, scopeState || api.state || {});
@@ -629,8 +677,15 @@
         let normalizedExpr = normalizeLightExpression(expr);
 
         try {
-            return Function('state', 'scope', 'with(state){ with(scope){ return (' + normalizedExpr + '); } }')(state, extras);
+            // Cache the compiled Function by expression string to avoid GC pressure
+            let fn = __exprCache.get(normalizedExpr);
+            if (!fn) {
+                fn = Function('state', 'scope', 'with(state){ with(scope){ return (' + normalizedExpr + '); } }');
+                __exprCache.set(normalizedExpr, fn);
+            }
+            return fn(state, extras);
         } catch (_) {
+            // Fallback: try direct property lookup for simple variable references
             try {
                 if (Object.prototype.hasOwnProperty.call(state, normalizedExpr)) {
                     return state[normalizedExpr];
@@ -671,6 +726,17 @@
         return out;
     }
 
+    /**
+     * Master sync function — updates all DOM bindings for a state key.
+     *
+     * When 'key' is provided, only elements bound to that key are updated.
+     * When 'key' is null, ALL bindings are refreshed (used after batch updates).
+     *
+     * 'full' controls whether conditionals (light:if/show) and loops (light:for)
+     * are also re-evaluated. Set to false for partial syncs during batch operations.
+     *
+     * Called by: api.set(), api.batch(), update(), flushSyncBindings()
+     */
     function syncBindings(key, full = true) {
         if (key) {
             syncJsBindings(key);
@@ -948,6 +1014,24 @@
         });
     }
 
+    /**
+     * Render light:for loop templates.
+     *
+     * Processes elements with data-light-for="item in list" directive:
+     *   1. Evaluates the source expression to get the array
+     *   2. Removes previously rendered nodes
+     *   3. Clones the template for each item with scoped bindings
+     *   4. Inserts rendered nodes after the template element
+     *
+     * Supports both <template> and regular elements as loop templates.
+     * The template element itself is hidden; only cloned children are visible.
+     *
+     * Scoped bindings (applyScopedBindings) resolve item.property, $index etc.
+     * within each cloned instance.
+     *
+     * @see Patch.php — insert/update/delete operations that modify the list
+     * @see applyScopedBindings() — resolves per-item bindings in clones
+     */
     function renderLightForTemplates() {
         let api = getJsApi();
 
@@ -960,7 +1044,7 @@
             let sourceExpr = match[2];
             let list = evaluateLightExpression(sourceExpr, api.state);
 
-
+            // Normalize: convert plain objects to arrays (for Object.values support)
             if (list && typeof list === 'object' && !Array.isArray(list)) {
                 list = Object.values(list);
             }
@@ -971,6 +1055,7 @@
 
             let isTemplate = node.tagName === 'TEMPLATE';
 
+            // Cache the template node/HTML on first render so we can clone from it
             if (!isTemplate) {
                 node.style.display = 'none';
 
@@ -982,14 +1067,17 @@
                 node._lightForSourceHtml = node.innerHTML;
             }
 
+            // Remove all previously rendered nodes before re-rendering
             if (node._lightRenderedNodes && node._lightRenderedNodes.length) {
                 node._lightRenderedNodes.forEach((renderedNode) => renderedNode.remove());
             }
 
+            // Build new DOM nodes from the template for each list item
             let wrapper = document.createDocumentFragment();
             let nodes = [];
 
             list.forEach((item, index) => {
+                // Scope: merge global state + current item + index
                 let scope = Object.assign({}, api.consts || {}, api.state || {}, {
                     [itemName]: item,
                     index,
@@ -1017,16 +1105,25 @@
                 nodes.push(clone);
             });
 
+            // Insert all nodes at once (single DOM write via fragment)
             node.after(wrapper);
             node._lightRenderedNodes = nodes;
         });
     }
 
+    /**
+     * Apply light:function inline assignments — no server round-trip.
+     * Parses expressions like "showModal=true, name=''" and updates state directly.
+     * This is the "client-side-first" approach: simple state changes happen instantly.
+     *
+     * @see Directives.php — transforms light:function="..." → data-light-function="..."
+     */
     function applyFunctionAssignments(raw, api) {
         if (!raw) return;
 
         let expr = raw.trim();
 
+        // Strip wrapping parentheses: "name(x=1, y=2)" → "x=1, y=2"
         let open = expr.indexOf('(');
         let close = expr.lastIndexOf(')');
         if (open !== -1 && close === expr.length - 1) {
@@ -1182,6 +1279,15 @@
         return parseDurationMs(el.getAttribute('data-light-debounce'), __defaultDebounceDelay);
     }
 
+    /**
+     * Dispatch an action with optional debounce.
+     * The debounce prevents rapid-fire calls (e.g. search-on-type).
+     * Without debounce, calls sendLightAction immediately.
+     *
+     * @param {string} action - Server-side method name (e.g. 'saveUser')
+     * @param {object} params - Data to send (form values, IDs, etc.)
+     * @param {object} options - {debounceMs, debounceKey, cache, cancelKey}
+     */
     function call(action, params = {}, options = {}) {
         let debounceMs = parseDurationMs(options.debounceMs, __defaultDebounceDelay);
         let debounceKey = options.debounceKey || action;
@@ -1232,6 +1338,25 @@
         });
     }
 
+    /**
+     * Send an AJAX POST to the Lightvel proxy endpoint.
+     *
+     * Flow:
+     *   1. Read endpoint URL from data-light-root (set by Compiler.php)
+     *   2. POST {url, action, params, component, fingerprint} as JSON
+     *   3. RouteServiceProvider receives this and forwards to the component
+     *   4. Component.run() invokes the action method and returns JSON
+     *   5. Response is passed to update() which merges state + re-renders
+     *
+     * Features:
+     *   - Response caching (optional, for read-heavy actions)
+     *   - Request cancellation via AbortController (prevents stale responses)
+     *   - Automatic error handling with state.status and state.message
+     *
+     * @see RouteServiceProvider.php — receives this POST request
+     * @see Component.php::run() — processes the action server-side
+     * @see update() — handles the JSON response
+     */
     function sendLightAction(action, params = {}, options = {}) {
         let csrfToken = document.querySelector('meta[name=csrf-token]')?.content || '';
         let root = document.querySelector('[data-light-root]');
@@ -1239,6 +1364,7 @@
         let component = root?.dataset.lightComponent || '';
         let fingerprint = root?.dataset.lightFingerprint || '';
 
+        // Optional response caching (e.g. for autocomplete results)
         let cacheEnabled = !!options.cache;
         let cacheTtlMs = parseDurationMs(options.cacheTtlMs, 10000);
         let cacheKey = options.cacheKey || `${action}:${JSON.stringify(params)}`;
@@ -1425,11 +1551,25 @@
             });
     }
 
+    /**
+     * Match items by their 'id' field for patch operations.
+     * Patch operations (insert/update/delete) use this to find which
+     * item in the array to modify.
+     */
     function findPatchItemId(item) {
         if (!item || typeof item !== 'object') return undefined;
         return item.id;
     }
 
+    /**
+     * Apply __patch operations to client-side state arrays.
+     * This is the key to avoiding full page refreshes after CRUD operations:
+     *   - delete: filter out items matching the given IDs
+     *   - update: merge new fields into existing items (matched by id)
+     *   - insert: prepend new items, deduplicating by id
+     *
+     * @see Patch.php — generates the __patch payload on the server
+     */
     function applyPatchOperations(api, patchData) {
         if (!patchData || typeof patchData !== 'object') return;
 
@@ -1513,6 +1653,24 @@
         return dirty;
     }
 
+    /**
+     * Process a server response and update client state.
+     *
+     * Handles the complete response lifecycle:
+     *   1. Unwrap envelope ({data: ...}) if present
+     *   2. Extract and display __lightvel_errors (validation errors)
+     *   3. Update status/message state from response
+     *   4. Apply __lightvel_dom (full DOM replacement, rare)
+     *   5. Apply __patch operations (surgical array mutations)
+     *   6. Merge remaining keys into api.state
+     *   7. Flush all DOM bindings to reflect new state
+     *
+     * After patching: calls refreshCurrentComponent() to re-render light:for
+     * templates with the updated data from the server.
+     *
+     * @see sendLightAction() — calls this with the server response
+     * @see applyPatchOperations() — handles __patch for insert/update/delete
+     */
     function update(data, fallbackKey = 'data') {
         let api = getJsApi();
         let payload = normalizeStoredPayload(data, fallbackKey);
@@ -1671,6 +1829,13 @@
             });
     }
 
+    // =======================================================================
+    // EVENT HANDLERS — Delegated listeners on document for all light:* actions
+    // Using event delegation means we don't need to re-bind after DOM updates.
+    // =======================================================================
+
+    // --- light:click → server-side action via AJAX ---
+    // Sends the action to Component.php::run() which invokes the method
     document.addEventListener('click', (e) => {
         let el = e.target.closest('[data-light-click]');
         if (!el) return;
@@ -1697,6 +1862,8 @@
         }
     });
 
+    // --- light:js:click → client-side action (no server round-trip) ---
+    // Calls a registered JS handler via api.register()
     document.addEventListener('click', (e) => {
         let el = e.target.closest('[data-light-js-click]');
         if (!el) return;
@@ -1723,6 +1890,9 @@
         });
     });
 
+    // --- light:function → inline client-side state assignment (INSTANT) ---
+    // e.g. light:function="showModal=true" → no server hit at all
+    // This is the "client-side-first" approach for instant UI reactions
     document.addEventListener('click', (e) => {
         let el = e.target.closest('[data-light-function]');
         if (!el) return;
@@ -1734,6 +1904,8 @@
         let api = getJsApi();
         let rawFunctionExpr = el.dataset.lightFunction || '';
 
+        // Fast path: if it's just assignments (e.g. "showModal=true"),
+        // apply directly without any server call
         if (isInlineAssignmentExpression(rawFunctionExpr)) {
             applyFunctionAssignments(rawFunctionExpr, api);
             queueSyncBindings();
@@ -1746,6 +1918,7 @@
         invokeCustomFunction(parsed.action, resolvedArgs, { event: e, el });
     });
 
+    // --- light:navigate → SPA-style navigation without full page reload ---
     document.addEventListener('click', (e) => {
         let link = e.target.closest('a[data-light-navigate]');
         if (!link) return;
@@ -1755,16 +1928,20 @@
         navigateTo(link.href);
     });
 
+    // Handle browser back/forward buttons for SPA navigation
     window.addEventListener('popstate', () => {
         navigateTo(window.location.href, { replace: true, fromPop: true });
     });
 
+    // --- light:submit → form submit triggers server-side action via AJAX ---
+    // Collects all form data + light:model values and sends as params
     document.addEventListener('submit', (e) => {
         let f = e.target.closest('[data-light-submit]');
         if (!f) return;
 
         e.preventDefault();
 
+        // Run client-side validation first (avoid unnecessary server call)
         if (!validateScope(f)) return;
 
         let data = {
@@ -1778,6 +1955,7 @@
         });
     });
 
+    // --- light:js:submit → client-side form handler (no server round-trip) ---
     document.addEventListener('submit', (e) => {
         let f = e.target.closest('[data-light-js-submit]');
         if (!f) return;
@@ -1807,6 +1985,8 @@
         });
     });
 
+    // --- light:model input → two-way data binding ---
+    // Updates state immediately on keystroke and optionally triggers live model action
     document.addEventListener('input', (e) => {
         let modelEl = e.target.closest('[data-light-model]');
         if (modelEl) {
@@ -1817,16 +1997,19 @@
             api.state[field] = getElementValue(modelEl);
             queueSyncBindings(field);
 
+            // Real-time field validation as user types
             let result = validateElement(modelEl, getRootRules());
             if (result) {
                 setFieldErrors(result.field, result.errors);
             }
 
+            // If light:model.live, auto-submit the parent form
             triggerLiveModelAction(modelEl);
 
             return;
         }
 
+        // JS-only model binding (no server sync)
         let el = e.target.closest('[data-light-js-model]');
         if (!el) return;
 
@@ -1843,6 +2026,7 @@
         }
     });
 
+    // --- change event — for selects, checkboxes, radios ---
     document.addEventListener('change', (e) => {
         let modelEl = e.target.closest('[data-light-model]');
         if (modelEl) {
@@ -1879,6 +2063,12 @@
         }
     });
 
+    // =======================================================================
+    // INITIALIZATION — runs immediately (script is placed before </body>)
+    // 1. Read all data-light-server-state and data-light-state into api.state
+    // 2. Remove data-light-booting to unhide reactive elements (FOUC fix)
+    // 3. Render any existing validation errors
+    // =======================================================================
     initJsState(document);
     document.documentElement.removeAttribute('data-light-booting');
     renderErrors(getJsApi().errors || {});

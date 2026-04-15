@@ -1,13 +1,13 @@
 {
   "name": "lightvel/lightvel",
   "description": "Lightweight reactive Laravel package inspired by Livewire",
-  "version": "1.3.49",
+  "version": "1.3.5",
   "type": "library",
   "license": "MIT",
   "authors": [
     {
       "name": "Ankur Jha",
-      "email": "ankurjhaaa@gmail.com",
+      "email": "ankur@echovel.com",
       "role": "Developer"
     }
   ],

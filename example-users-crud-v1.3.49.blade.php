@@ -1,18 +1,44 @@
+{{-- ============================================================================
+    Lightvel CRUD Example — v1.3.49 (Optimized)
+
+    This example demonstrates all major Lightvel features:
+    ✓ Component class with lightvel() initial state
+    ✓ Server actions (saveUser, deleteUser, searchUsers)
+    ✓ patch() for surgical client-side array updates (no full refresh)
+    ✓ light:model / light:model.live (two-way binding)
+    ✓ light:click (server action with args)
+    ✓ light:submit (form submission)
+    ✓ light:function (client-side-only state change — INSTANT, no server)
+    ✓ light:if (conditional rendering)
+    ✓ light:for (list rendering)
+    ✓ light:text (reactive text binding)
+    ✓ light:rules + light:error (client-side validation)
+    ✓ light:debounce (debounced live search)
+    ✓ light:state (client-side state initialization)
+
+    Setup:
+    1. Copy this file to resources/views/pages/users.blade.php
+    2. Add route: Route::lightvel('/users', 'pages.users');
+    3. Make sure your layout has @lightScripts before </body>
+    4. Run: php artisan view:clear
+    5. Visit /users
+============================================================================ --}}
+
 @php
 use Lightvel\Component;
 use Lightvel\Layout;
 use Illuminate\Http\Request;
 
 new #[Layout('app')] class extends Component {
-    protected function usersQuery()
-    {
-        return \App\Models\User::query()->latest();
-    }
 
+    /**
+     * Initial state — runs ONLY on first page load (GET request).
+     * On AJAX actions this is SKIPPED for maximum speed.
+     */
     public function lightvel(): array
     {
         return [
-            'users' => $this->usersQuery()->limit(10)->get(),
+            'users' => \App\Models\User::query()->latest()->limit(10)->get(),
             'search' => '',
             'showModal' => false,
             'editingId' => null,
@@ -23,11 +49,15 @@ new #[Layout('app')] class extends Component {
         ];
     }
 
+    /**
+     * Live search — called on every keystroke (debounced 300ms).
+     * Returns only the updated 'users' array — no full page refresh.
+     */
     public function searchUsers(Request $request): array
     {
         $search = (string) $request->input('search', '');
 
-        $query = $this->usersQuery();
+        $query = \App\Models\User::query()->latest();
 
         if ($search !== '') {
             $query->where(function ($q) use ($search) {
@@ -41,6 +71,11 @@ new #[Layout('app')] class extends Component {
         ];
     }
 
+    /**
+     * Create or update a user.
+     * Uses patch()->insert() / patch()->update() for surgical DOM updates —
+     * the JS runtime modifies only the affected row instead of replacing the whole table.
+     */
     public function saveUser(Request $request): array
     {
         $id = (int) $request->input('editingId');
@@ -75,19 +110,10 @@ new #[Layout('app')] class extends Component {
                 'password' => bcrypt($validated['password']),
             ]);
 
-            $updatedUser = $user->fresh();
-
-            if (! $updatedUser) {
-                return [
-                    ...$resetForm,
-                    'message' => 'User updated successfully',
-                ];
-            }
-
             return [
                 ...$resetForm,
                 'message' => 'User updated successfully',
-                ...patch()->update('users', $updatedUser),
+                ...patch()->update('users', $user->fresh()),
             ];
         } else {
             $user = \App\Models\User::create([
@@ -104,14 +130,16 @@ new #[Layout('app')] class extends Component {
         }
     }
 
+    /**
+     * Delete a user.
+     * patch()->delete() removes the row from the client-side array instantly.
+     */
     public function deleteUser(int $id): array
     {
         $deleted = \App\Models\User::find($id)?->delete();
 
         if (! $deleted) {
-            return [
-                'message' => 'User not found',
-            ];
+            return ['message' => 'User not found'];
         }
 
         return [
@@ -126,8 +154,11 @@ new #[Layout('app')] class extends Component {
     light:state="users=[], search='', showModal=false, editingId=null, name='', email='', password='', message=''"
     class="mx-auto max-w-6xl px-4 py-12 sm:px-6 lg:px-8"
 >
+    {{-- Header + New User button --}}
     <div class="mb-8 flex items-center justify-between">
         <h1 class="text-4xl font-bold text-gray-900">Users CRUD</h1>
+
+        {{-- light:function = instant client-side state change (no server call) --}}
         <button
             type="button"
             light:function="showModal=true, editingId=null, name='', email='', password='', message=''"
@@ -137,6 +168,12 @@ new #[Layout('app')] class extends Component {
         </button>
     </div>
 
+    {{-- Status message --}}
+    <div light:if="message" class="mb-4 rounded-lg bg-green-50 border border-green-200 p-3 text-sm text-green-700">
+        <span light:text="message"></span>
+    </div>
+
+    {{-- Search with debounced live search --}}
     <div class="mb-6">
         <form light:submit="searchUsers" class="flex gap-2">
             <input
@@ -149,6 +186,7 @@ new #[Layout('app')] class extends Component {
         </form>
     </div>
 
+    {{-- Users table --}}
     <div class="overflow-hidden rounded-lg border border-gray-200 shadow">
         <table class="w-full">
             <thead class="border-b bg-gray-50">
@@ -160,12 +198,14 @@ new #[Layout('app')] class extends Component {
                 </tr>
             </thead>
             <tbody>
+                {{-- light:for loops through the users array --}}
                 <tr light:for="user in users">
                     <td class="border-t border-gray-200 px-6 py-4 text-sm text-gray-900" light:text="user.name"></td>
                     <td class="border-t border-gray-200 px-6 py-4 text-sm text-gray-500" light:text="user.email"></td>
                     <td class="border-t border-gray-200 px-6 py-4 text-sm text-gray-500" light:text="user.created_at"></td>
                     <td class="border-t border-gray-200 px-6 py-4 text-right">
                         <div class="flex justify-end gap-2">
+                            {{-- light:function opens modal with user data pre-filled (instant, no server) --}}
                             <button
                                 type="button"
                                 light:function="showModal=true, editingId=user.id, name=user.name, email=user.email, password='', message=''"
@@ -174,6 +214,7 @@ new #[Layout('app')] class extends Component {
                                 Edit
                             </button>
 
+                            {{-- light:click sends the user.id to deleteUser() on the server --}}
                             <button
                                 type="button"
                                 light:click="deleteUser(user.id)"
@@ -184,17 +225,22 @@ new #[Layout('app')] class extends Component {
                         </div>
                     </td>
                 </tr>
+
+                {{-- Empty state --}}
                 <tr light:if="users.length === 0">
                     <td colspan="4" class="border-t border-gray-200 px-6 py-8 text-center text-sm text-gray-500">
-                        Loading users...
+                        No users found.
                     </td>
                 </tr>
             </tbody>
         </table>
     </div>
 
+    {{-- Modal (create/edit user) --}}
     <div light:if="showModal" class="fixed inset-0 z-50 flex items-center justify-center">
+        {{-- Backdrop — click to close (instant, no server) --}}
         <div class="absolute inset-0 bg-black/40" light:function="showModal=false, message=''"></div>
+
         <div class="relative w-full max-w-md rounded-lg bg-white shadow-lg">
             <button
                 type="button"
@@ -211,6 +257,7 @@ new #[Layout('app')] class extends Component {
                 </h2>
             </div>
 
+            {{-- light:submit sends form data to saveUser() on the server --}}
             <form light:submit="saveUser" class="space-y-4 px-6 py-4">
                 <input type="hidden" light:model="editingId" />
 
@@ -223,6 +270,7 @@ new #[Layout('app')] class extends Component {
                         placeholder="Enter name"
                         class="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-indigo-500 focus:outline-none"
                     />
+                    {{-- light:error shows validation errors for this field --}}
                     <span light:error="name" class="mt-1 block text-sm text-red-600"></span>
                 </div>
 
@@ -248,10 +296,6 @@ new #[Layout('app')] class extends Component {
                         class="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-indigo-500 focus:outline-none"
                     />
                     <span light:error="password" class="mt-1 block text-sm text-red-600"></span>
-                </div>
-
-                <div light:if="message" class="rounded-lg bg-green-50 p-3 text-sm text-green-700">
-                    <span light:text="message"></span>
                 </div>
 
                 <div class="flex gap-3 pt-4">

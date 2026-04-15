@@ -5,6 +5,38 @@ namespace Lightvel\Support\Blade;
 use Illuminate\Support\Facades\Blade;
 use Lightvel\Support\Assets;
 
+/**
+ * Registers custom Lightvel Blade directives that transform
+ * light:* shorthand attributes into data-light-* HTML attributes.
+ *
+ * These data attributes are then processed by the JS runtime (lightvel.js).
+ *
+ * Directive mapping (Blade → HTML → JS handler):
+ *
+ *   light:model="x"          → data-light-model="x"          → input/change event listeners
+ *   light:model.live="x"     → data-light-model + model-live → triggerLiveModelAction()
+ *   light:click="action()"   → data-light-click="action()"   → click event → call() → sendLightAction()
+ *   light:submit="action"    → data-light-submit="action"    → submit event → call() → sendLightAction()
+ *   light:text="expr"        → data-light-text="expr"        → syncLightTextBindings()
+ *   light:html="expr"        → data-light-html="expr"        → innerHTML binding
+ *   light:show="expr"        → data-light-show="expr"        → syncLightConditionals() display toggle
+ *   light:if="expr"          → data-light-if="expr"          → syncLightConditionals() display toggle
+ *   light:class="expr"       → data-light-class="expr"       → syncJsBindings() class toggle
+ *   light:for="item in list" → data-light-for="item in list" → renderLightForTemplates() loop rendering
+ *   light:state="..."        → data-light-state="..."        → initJsState() initial state setup
+ *   light:const="..."        → data-light-const="..."        → initJsState() read-only constants
+ *   light:function="..."     → data-light-function="..."     → invokeCustomFunction() or inline assignments
+ *   light:bind="key"         → data-light-bind="key"         → syncJsBindings() text binding
+ *   light:rules="..."        → data-light-rules="..."        → validateElement() client-side validation
+ *   light:debounce="300"     → data-light-debounce="300"     → getElementDebounceMs() delay
+ *   light:error="field"      → data-light-error="field"      → renderErrors() error display
+ *   light:navigate            → data-light-navigate="true"    → navigateTo() SPA navigation
+ *
+ * @lightScripts directive outputs the full JS runtime inline via Assets::scripts()
+ *
+ * @see resources/js/lightvel.js — all JS functions referenced above
+ * @see \Lightvel\Support\Assets::scripts() — generates the script tag
+ */
 class Directives
 {
     /**
@@ -12,47 +44,74 @@ class Directives
      */
     public static function register(): void
     {
+        // Blade::extend() runs as a post-processor on compiled Blade output.
+        // It transforms light:* shorthand into standard data-* HTML attributes.
         Blade::extend(function ($view) {
+            // Helper: strip {{ light.xxx }} wrapper from expressions used in attributes
             $normalizeLightExpr = static function (string $expression): string {
-                return preg_replace('/\{\{\s*light\.([A-Za-z_][A-Za-z0-9_\.\->]*)\s*\}\}/', '$1', $expression);
+                return preg_replace('/\{\{\s*light\.([A-Za-z_][A-Za-z0-9_\.\-\>]*)\s*\}\}/', '$1', $expression);
             };
 
+            // --- Two-way data binding ---
+            // light:model.live sends live updates on every input keystroke
             $view = preg_replace('/light:model\.live="([^"]+)"/', 'data-light-model="$1" data-light-model-live="true"', $view);
             $view = preg_replace('/light:model="([^"]+)"/', 'data-light-model="$1"', $view);
+
+            // --- Action triggers ---
+            // light:click calls a server-side action method via AJAX
             $view = preg_replace_callback('/light:click="([^"]+)"/', function ($match) use ($normalizeLightExpr) {
                 return 'data-light-click="' . $normalizeLightExpr($match[1]) . '"';
             }, $view);
+            // light:submit calls a server-side action on form submit
             $view = preg_replace_callback('/light:submit="([^"]+)"/', function ($match) use ($normalizeLightExpr) {
                 return 'data-light-submit="' . $normalizeLightExpr($match[1]) . '"';
             }, $view);
-            $view = preg_replace('/light:bind="([^"]+)"/', 'data-light-bind="$1"', $view);
 
-            $view = preg_replace_callback('/light:state=("|\')(.*?)\1/', function ($match) {
-                return 'data-light-state="' . $match[2] . '"';
-            }, $view);
-            $view = preg_replace('/light:const="([^"]+)"/', 'data-light-const="$1"', $view);
-            $view = preg_replace_callback('/light:function="([^"]+)"/', function ($match) use ($normalizeLightExpr) {
-                return 'data-light-function="' . $normalizeLightExpr($match[1]) . '"';
-            }, $view);
+            // --- Text/HTML output binding ---
+            $view = preg_replace('/light:bind="([^"]+)"/', 'data-light-bind="$1"', $view);
             $view = preg_replace_callback('/light:text="([^"]+)"/', function ($match) use ($normalizeLightExpr) {
                 return 'data-light-text="' . $normalizeLightExpr($match[1]) . '"';
             }, $view);
             $view = preg_replace('/light:html="([^"]+)"/', 'data-light-html="$1"', $view);
+
+            // --- State management ---
+            // light:state initializes client-side reactive state
+            $view = preg_replace_callback('/light:state=("|\')(.*?)\1/', function ($match) {
+                return 'data-light-state="' . $match[2] . '"';
+            }, $view);
+            // light:const defines read-only values (cannot be overwritten by set())
+            $view = preg_replace('/light:const="([^"]+)"/', 'data-light-const="$1"', $view);
+
+            // --- Client-side function (no server round-trip) ---
+            // light:function assigns state values directly on the client
+            // e.g. light:function="showModal=true, name=''" → instant UI update
+            $view = preg_replace_callback('/light:function="([^"]+)"/', function ($match) use ($normalizeLightExpr) {
+                return 'data-light-function="' . $normalizeLightExpr($match[1]) . '"';
+            }, $view);
+
+            // --- Conditional rendering ---
             $view = preg_replace('/light:show="([^"]+)"/', 'data-light-show="$1"', $view);
             $view = preg_replace('/light:if="([^"]+)"/', 'data-light-if="$1"', $view);
             $view = preg_replace('/light:class="([^"]+)"/', 'data-light-class="$1"', $view);
-            $view = preg_replace('/light:data="([^"]+)"/', 'data-light-data="$1"', $view);
+
+            // --- List rendering ---
+            // light:for="user in users" → clones the element for each item
             $view = preg_replace('/light:for="([^"]+)"/', 'data-light-for="$1"', $view);
+
+            // --- Validation ---
             $view = preg_replace('/light:rules="([^"]+)"/', 'data-light-rules="$1"', $view);
             $view = preg_replace('/light:debounce="([^"]+)"/', 'data-light-debounce="$1"', $view);
-
             $view = preg_replace('/light:error="([^"]+)"/', 'data-light-error="$1"', $view);
             $view = preg_replace('/light:error-message="([^"]+)"/', 'data-light-error-message="$1"', $view);
+
+            // --- SPA navigation ---
             $view = preg_replace('/\s+light:navigate(?:="[^"]*")?/', ' data-light-navigate="true"', $view);
 
-            return preg_replace('/light:html="([^"]+)"/', 'data-light-html="$1"', $view);
+            return $view;
         });
 
+        // @lightScripts directive — outputs the full Lightvel JS runtime inline
+        // Place this in your layout file before </body>
         Blade::directive('lightScripts', function () {
             return Assets::scripts();
         });
