@@ -38,7 +38,7 @@ new #[Layout('app')] class extends Component {
     public function lightvel(): array
     {
         return [
-            'users' => \App\Models\User::query()->latest()->limit(10)->get(),
+            'users' => \App\Models\User::query()->latest()->paginate(10),
             'search' => '',
             'showModal' => false,
             'editingId' => null,
@@ -66,8 +66,10 @@ new #[Layout('app')] class extends Component {
             });
         }
 
+        $page = (int) $request->input('page', 1);
+
         return [
-            'users' => $query->limit(10)->get(),
+            'users' => $query->paginate(10, ['*'], 'page', $page),
         ];
     }
 
@@ -174,15 +176,21 @@ new #[Layout('app')] class extends Component {
     </div>
 
     {{-- Search with debounced live search --}}
-    <div class="mb-6">
-        <form light:submit="searchUsers" class="flex gap-2">
-            <input
-                type="text"
-                light:model.live="search"
-                light:debounce="300"
-                placeholder="Search by name or email..."
-                class="w-full rounded-lg border border-gray-300 px-4 py-2 focus:border-indigo-500 focus:outline-none"
-            />
+    <div class="mb-6 flex items-center justify-between">
+        <form light:submit="searchUsers" class="flex gap-2 w-full max-w-md">
+            <div class="relative w-full">
+                <input
+                    type="text"
+                    light:model.live="search"
+                    light:debounce="300"
+                    placeholder="Search by name or email..."
+                    class="w-full rounded-lg border border-gray-300 px-4 py-2 focus:border-indigo-500 focus:outline-none"
+                />
+                {{-- Spinner shows only while AJAX action is running --}}
+                <div light:loading light:loading.delay="200" class="absolute right-3 top-2.5">
+                    <div class="lightvel-spinner"></div>
+                </div>
+            </div>
         </form>
     </div>
 
@@ -227,7 +235,7 @@ new #[Layout('app')] class extends Component {
                 </tr>
 
                 {{-- Empty state --}}
-                <tr light:if="users.length === 0">
+                <tr light:if="users.data && users.data.length === 0">
                     <td colspan="4" class="border-t border-gray-200 px-6 py-8 text-center text-sm text-gray-500">
                         No users found.
                     </td>
@@ -235,6 +243,9 @@ new #[Layout('app')] class extends Component {
             </tbody>
         </table>
     </div>
+
+    {{-- Pagination Controls --}}
+    <div light:paginate="users" light:paginate-action="searchUsers"></div>
 
     {{-- Modal (create/edit user) --}}
     <div light:if="showModal" class="fixed inset-0 z-50 flex items-center justify-center">
@@ -308,8 +319,9 @@ new #[Layout('app')] class extends Component {
                     </button>
                     <button
                         type="submit"
-                        class="flex-1 rounded-lg bg-indigo-600 px-4 py-2 font-semibold text-white hover:bg-indigo-700"
+                        class="flex-1 flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
                     >
+                        <span light:loading class="lightvel-spinner" style="width:16px;height:16px;border-width:2px;"></span>
                         <span light:if="editingId">Update</span>
                         <span light:if="!editingId">Create</span>
                     </button>

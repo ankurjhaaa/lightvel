@@ -50,12 +50,15 @@ class Component
      * On AJAX action calls, we skip this entirely to avoid re-running
      * expensive DB queries that produced the initial state.
      *
+     * Route parameters (e.g. {id} from /product/{id}) are forwarded
+     * as method arguments: lightvel($id) or lightvel($id, $slug).
+     *
      * @see lightvel() — user-defined method that returns initial state array
      */
-    protected function bootLightvel(): void
+    protected function bootLightvel(array $routeParams = []): void
     {
         if (method_exists($this, 'lightvel')) {
-            $result = $this->lightvel();
+            $result = $this->lightvel(...$routeParams);
             $normalized = $this->normalizeActionResult($result);
 
             if (is_array($normalized)) {
@@ -313,15 +316,17 @@ class Component
      *      - Reads action + params from POST body
      *      - Invokes the action method and returns JSON result
      *
+     * @param array $routeParams Route parameters (e.g. [42] for /product/{id})
      * @see \Lightvel\Support\Blade\Compiler::transform() — generates the code that calls this
      */
-    public function run()
+    public function run(array $routeParams = [])
     {
         // --- INITIAL PAGE RENDER ---
         // No X-Light header means this is a normal browser GET request.
         // Boot full state (runs lightvel() which may have DB queries).
+        // Route params are forwarded so lightvel($id) receives the {id}.
         if (!request()->header('X-Light')) {
-            $this->bootLightvel();
+            $this->bootLightvel($routeParams);
             return get_object_vars($this);
         }
 

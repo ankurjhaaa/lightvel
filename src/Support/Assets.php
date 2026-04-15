@@ -64,6 +64,18 @@ class Assets
             . '[data-light-booting] [data-light-for]'
             . '{display:none !important;}'
             . '[data-light-booting] [data-light-text]{visibility:hidden;}'
+            // Loading elements are hidden by default, shown only during AJAX
+            . '[data-light-loading]{display:none;}'
+            // Default spinner — use class="lightvel-spinner" for a built-in spinner
+            . '@keyframes lightvel-spin{to{transform:rotate(360deg)}}'
+            . '.lightvel-spinner{display:inline-block;width:20px;height:20px;'
+            . 'border:2px solid #e5e7eb;border-top-color:#6366f1;'
+            . 'border-radius:50%;animation:lightvel-spin .6s linear infinite;}'
+            // Skeleton shimmer — use class="lightvel-skeleton" for loading placeholders
+            . '@keyframes lightvel-shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}'
+            . '.lightvel-skeleton{background:linear-gradient(90deg,#f0f0f0 25%,#e0e0e0 50%,#f0f0f0 75%);'
+            . 'background-size:200% 100%;animation:lightvel-shimmer 1.5s infinite;'
+            . 'border-radius:4px;min-height:1em;}'
             . '</style>';
 
         return $bootStyles . PHP_EOL

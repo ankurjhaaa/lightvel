@@ -26,10 +26,19 @@
     // --- Progress bar (top-of-page loading indicator during AJAX) ---
     let progressEl = null;
     let progressTimer = null;
+    let progressEndTimer1 = null;
+    let progressEndTimer2 = null;
 
     // --- Expression cache: avoids recreating Function() objects on every eval ---
     // Key: expression string, Value: compiled Function
     let __exprCache = new Map();
+
+    // --- Loading state ---
+    // Tracks active AJAX requests. light:loading elements are shown when > 0
+    let __lightLoadingCount = 0;
+    let __loadingDelayTimers = new Map();  // el → setTimeout id
+    let __loadingMinEndTimes = new Map(); // el → timestamp when min expires
+    let __loadingStartTime = 0;
 
     function getConfig() {
         return window.Lightvel || {};
@@ -56,17 +65,24 @@
 
     function startProgress() {
         let el = ensureProgressBar();
+        
+        clearTimeout(progressTimer);
+        clearTimeout(progressEndTimer1);
+        clearTimeout(progressEndTimer2);
+
         el.style.backgroundColor = getConfig().progressBarColor || '#111827';
         el.style.transition = 'none';
         el.style.width = '0%';
         el.style.opacity = '1';
+
+        // Force reflow
+        void el.offsetWidth;
 
         requestAnimationFrame(() => {
             el.style.transition = 'width 300ms ease, opacity 250ms ease';
             el.style.width = '70%';
         });
 
-        clearTimeout(progressTimer);
         progressTimer = setTimeout(() => {
             el.style.width = '90%';
         }, 350);
@@ -76,12 +92,22 @@
         if (!progressEl) return;
 
         clearTimeout(progressTimer);
+        clearTimeout(progressEndTimer1);
+        clearTimeout(progressEndTimer2);
+
+        progressEl.style.transition = 'width 250ms ease, opacity 250ms ease';
         progressEl.style.width = '100%';
 
-        setTimeout(() => {
+        progressEndTimer1 = setTimeout(() => {
             if (!progressEl) return;
+            progressEl.style.transition = 'opacity 250ms ease'; // Only fade opacity, don't slide width back
             progressEl.style.opacity = '0';
-            progressEl.style.width = '0%';
+            
+            progressEndTimer2 = setTimeout(() => {
+                if (!progressEl) return;
+                progressEl.style.transition = 'none';
+                progressEl.style.width = '0%';
+            }, 250);
         }, 200);
     }
 
@@ -750,6 +776,7 @@
         if (full) {
             syncLightConditionals();
             renderLightForTemplates();
+            syncLightPaginate();
         }
     }
 
@@ -1044,6 +1071,11 @@
             let sourceExpr = match[2];
             let list = evaluateLightExpression(sourceExpr, api.state);
 
+            // Handle Laravel paginator object (extract .data layer automatically)
+            if (list && typeof list === 'object' && !Array.isArray(list) && 'data' in list && 'current_page' in list) {
+                list = list.data;
+            }
+
             // Normalize: convert plain objects to arrays (for Object.values support)
             if (list && typeof list === 'object' && !Array.isArray(list)) {
                 list = Object.values(list);
@@ -1052,6 +1084,15 @@
             if (!Array.isArray(list)) {
                 list = [];
             }
+
+            // Performance: skip full re-render if array reference + length unchanged.
+            // This is critical for 5000+ items — light:function (client-side) state
+            // changes that don't touch this array won't trigger expensive DOM rebuilds.
+            if (node._lightForLastRef === list && node._lightForLastLen === list.length) {
+                return; // Array unchanged, skip
+            }
+            node._lightForLastRef = list;
+            node._lightForLastLen = list.length;
 
             let isTemplate = node.tagName === 'TEMPLATE';
 
@@ -1108,6 +1149,108 @@
             // Insert all nodes at once (single DOM write via fragment)
             node.after(wrapper);
             node._lightRenderedNodes = nodes;
+        });
+    }
+
+    // --- light:paginate → render pagination UI directly from Laravel Paginator JSON ---
+    function syncLightPaginate() {
+        let api = getJsApi();
+        
+        document.querySelectorAll('[data-light-paginate]').forEach((node) => {
+            let key = node.getAttribute('data-light-paginate');
+            let actionName = node.getAttribute('data-light-paginate-action') || node.closest('form, [data-light-submit]')?.getAttribute('data-light-submit');
+            let paginator = api.state[key];
+
+            if (!paginator || !paginator.data || !paginator.links) {
+                node.innerHTML = '';
+                return;
+            }
+
+            // Don't re-render if it's the exact same paginator reference
+            if (node._lightPaginateLastRef === paginator) return;
+            node._lightPaginateLastRef = paginator;
+
+            // Stop if only 1 page
+            if (paginator.links.length <= 3) {
+                node.innerHTML = '';
+                return;
+            }
+
+            let html = `<div class="flex items-center justify-between border-t border-gray-200 px-4 py-3 sm:px-6 mt-4">`;
+            
+            // Mobile (Prev/Next)
+            html += `<div class="flex flex-1 justify-between sm:hidden">`;
+            let prevLink = paginator.links[0];
+            let nextLink = paginator.links[paginator.links.length - 1];
+            
+            if (prevLink.url) {
+                let pageStr = new URL(prevLink.url).searchParams.get('page');
+                html += `<button type="button" data-lv-page="${pageStr}" class="lv-paginate-btn relative inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Previous</button>`;
+            } else {
+                html += `<span class="relative inline-flex items-center rounded-md border border-gray-300 bg-gray-100 px-4 py-2 text-sm font-medium text-gray-400 cursor-not-allowed">Previous</span>`;
+            }
+            if (nextLink.url) {
+                let pageStr = new URL(nextLink.url).searchParams.get('page');
+                html += `<button type="button" data-lv-page="${pageStr}" class="lv-paginate-btn relative ml-3 inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Next</button>`;
+            } else {
+                html += `<span class="relative ml-3 inline-flex items-center rounded-md border border-gray-300 bg-gray-100 px-4 py-2 text-sm font-medium text-gray-400 cursor-not-allowed">Next</span>`;
+            }
+            html += `</div>`;
+
+            // Desktop view
+            html += `<div class="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+                <div>
+                    <p class="text-sm text-gray-700">Showing <span class="font-medium">${paginator.from || 0}</span> to <span class="font-medium">${paginator.to || 0}</span> of <span class="font-medium">${paginator.total || 0}</span> results</p>
+                </div>
+                <div>
+                    <nav class="isolate inline-flex -space-x-px rounded-md shadow-sm bg-white" aria-label="Pagination">`;
+
+            paginator.links.forEach((link, idx) => {
+                let isFirst = idx === 0;
+                let isLast = idx === paginator.links.length - 1;
+                
+                let roundedClass = isFirst ? 'rounded-l-md' : (isLast ? 'rounded-r-md' : '');
+                let rawLabel = String(link.label).replace('&laquo;', '«').replace('&raquo;', '»').replace('Previous', '«').replace('Next', '»');
+                
+                if (link.url === null) {
+                    html += `<span class="relative inline-flex items-center px-4 py-2 text-sm font-semibold text-gray-400 ring-1 ring-inset ring-gray-300 ${roundedClass}">${rawLabel}</span>`;
+                } else if (link.active) {
+                    html += `<span class="relative z-10 inline-flex items-center bg-indigo-600 px-4 py-2 text-sm font-semibold text-white focus:z-20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 ${roundedClass}">${rawLabel}</span>`;
+                } else {
+                    let pageStr = new URL(link.url).searchParams.get('page');
+                    html += `<button type="button" data-lv-page="${pageStr}" class="lv-paginate-btn relative inline-flex items-center px-4 py-2 text-sm font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 ${roundedClass}">${rawLabel}</button>`;
+                }
+            });
+
+            html += `</nav></div></div></div>`;
+            node.innerHTML = html;
+
+            // Attach event listeners
+            node.querySelectorAll('.lv-paginate-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    if (!actionName) {
+                        console.warn('Lightvel: light:paginate requires light:paginate-action="myAction" on the element, or it must be inside a form with light:submit="myAction"');
+                        return;
+                    }
+                    
+                    let pageNum = parseInt(btn.getAttribute('data-lv-page'), 10);
+                    
+                    // Call the action with the page number
+                    let form = node.closest('form[data-light-submit]');
+                    let payload = {};
+                    if (form) {
+                        payload = {
+                            ...collect(form),
+                            ...Object.fromEntries(new FormData(form).entries())
+                        };
+                    }
+                    // Inject page
+                    payload.page = pageNum;
+                    
+                    call(actionName, payload);
+                });
+            });
         });
     }
 
@@ -1389,6 +1532,11 @@
             __activeControllers[cancelKey] = controller;
         }
 
+        // --- Loading: show indicators ---
+        __lightLoadingCount++;
+        __loadingStartTime = Date.now();
+        syncLoadingElements(true);
+
         return fetch(endpoint, {
             method: 'POST',
             headers: {
@@ -1484,6 +1632,12 @@
             .finally(() => {
                 if (cancelKey && __activeControllers[cancelKey] === controller) {
                     delete __activeControllers[cancelKey];
+                }
+
+                // --- Loading: hide indicators ---
+                __lightLoadingCount = Math.max(0, __lightLoadingCount - 1);
+                if (__lightLoadingCount === 0) {
+                    syncLoadingElements(false);
                 }
             });
     }
@@ -1747,9 +1901,80 @@
 
         flushSyncBindings();
 
-        if (hasPatch) {
-            refreshCurrentComponent();
-        }
+        // Patch operations already updated api.state in-place.
+        // flushSyncBindings() above re-renders light:for templates.
+        // No need for refreshCurrentComponent() — that was making a 2nd
+        // full GET request which defeated the entire purpose of patch().
+    }
+
+    /**
+     * Show or hide loading indicator elements.
+     *
+     * Supports:
+     *   - data-light-loading: basic show/hide during AJAX
+     *   - data-light-loading-delay="500": show only after delay ms (avoids flash for fast requests)
+     *   - data-light-loading-min="1000": show for at least min ms (timer requirement —
+     *     if response arrives before min, data is held back until min expires)
+     *
+     * Usage in Blade:
+     *   <div light:loading>Loading...</div>
+     *   <div light:loading light:loading.delay="300" light:loading.min="1000">Please wait...</div>
+     *   <div light:loading class="lightvel-spinner"></div>  (uses default spinner CSS)
+     */
+    function syncLoadingElements(isLoading) {
+        document.querySelectorAll('[data-light-loading]').forEach((el) => {
+            let delayMs = parseInt(el.getAttribute('data-light-loading-delay') || '0', 10) || 0;
+            let minMs = parseInt(el.getAttribute('data-light-loading-min') || '0', 10) || 0;
+
+            if (isLoading) {
+                // Clear any pending hide
+                if (__loadingDelayTimers.has(el)) {
+                    clearTimeout(__loadingDelayTimers.get(el));
+                    __loadingDelayTimers.delete(el);
+                }
+
+                if (delayMs > 0) {
+                    // Delay: show only if request takes longer than delay
+                    let timer = setTimeout(() => {
+                        el.style.display = '';
+                        __loadingDelayTimers.delete(el);
+                        if (minMs > 0) {
+                            __loadingMinEndTimes.set(el, Date.now() + minMs);
+                        }
+                    }, delayMs);
+                    __loadingDelayTimers.set(el, timer);
+                } else {
+                    el.style.display = '';
+                    if (minMs > 0) {
+                        __loadingMinEndTimes.set(el, Date.now() + minMs);
+                    }
+                }
+            } else {
+                // Cancel any pending delay-show
+                if (__loadingDelayTimers.has(el)) {
+                    clearTimeout(__loadingDelayTimers.get(el));
+                    __loadingDelayTimers.delete(el);
+                }
+
+                let minEnd = __loadingMinEndTimes.get(el) || 0;
+                let remaining = minEnd - Date.now();
+
+                if (remaining > 0) {
+                    // Min timer not expired yet — keep showing, hide later
+                    let timer = setTimeout(() => {
+                        el.style.display = 'none';
+                        __loadingMinEndTimes.delete(el);
+                        __loadingDelayTimers.delete(el);
+                        // Now flush any pending state updates that arrived during min-timer
+                        flushSyncBindings();
+                    }, remaining);
+                    __loadingDelayTimers.set(el, timer);
+                } else {
+                    el.style.display = 'none';
+                    __loadingMinEndTimes.delete(el);
+                }
+            }
+        });
     }
 
     function isSameOrigin(url) {

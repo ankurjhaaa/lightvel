@@ -90,7 +90,7 @@ class Compiler
 
             {$layoutBoot}
 
-            \$__result = \$__lv->run();
+            \$__result = \$__lv->run(\$__lightvel_params ?? array_values(request()->route()?->parameters() ?? []));
 
             \$__data = get_object_vars(\$__lv);
             extract(\$__data);

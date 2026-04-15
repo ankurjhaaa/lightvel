@@ -40,8 +40,11 @@ class RouteServiceProvider extends ServiceProvider
         // POST requests with X-Light header are handled as component actions.
         // ------------------------------------------------------------------
         Route::macro('lightvel', function (string $uri, string $view, array|string|null $methods = null) {
+            // Handler captures route parameters and passes to view
             $handler = function () use ($view) {
-                $html = view($view)->render();
+                // Collect route parameters (e.g. {id}, {slug}) for lightvel($id) support
+                $routeParams = array_values(request()->route()?->parameters() ?? []);
+                $html = view($view, ['__lightvel_params' => $routeParams])->render();
 
                 return response($html, 200, [
                     'Content-Type' => 'text/html; charset=UTF-8',
@@ -155,8 +158,20 @@ class RouteServiceProvider extends ServiceProvider
             $forward->headers->set('X-Requested-With', 'XMLHttpRequest');
             $forward->headers->set('Accept', 'application/json');
 
-            // Dispatch the internal request through Laravel's kernel
-            $response = app()->handle($forward);
+            // Dispatch through Laravel's Router instead of app()->handle().
+            // This keeps everything in the SAME request lifecycle so that
+            // debugbar can capture queries, route names, and timing data.
+            $originalRequest = app('request');
+            app()->instance('request', $forward);
+            \Illuminate\Support\Facades\Request::swap($forward);
+
+            try {
+                $response = app(\Illuminate\Routing\Router::class)->dispatch($forward);
+            } finally {
+                // Restore original request so the outer request context is clean
+                app()->instance('request', $originalRequest);
+                \Illuminate\Support\Facades\Request::swap($originalRequest);
+            }
 
             // Fallback: if POST returns 404/405, retry as GET with base64 payload
             // This handles routes that only accept GET (e.g. Route::get())
@@ -184,7 +199,16 @@ class RouteServiceProvider extends ServiceProvider
                 $fallback->headers->set('X-Requested-With', 'XMLHttpRequest');
                 $fallback->headers->set('Accept', 'application/json');
 
-                $response = app()->handle($fallback);
+                $originalRequest2 = app('request');
+                app()->instance('request', $fallback);
+                \Illuminate\Support\Facades\Request::swap($fallback);
+
+                try {
+                    $response = app(\Illuminate\Routing\Router::class)->dispatch($fallback);
+                } finally {
+                    app()->instance('request', $originalRequest2);
+                    \Illuminate\Support\Facades\Request::swap($originalRequest2);
+                }
             }
 
             // Return the JSON response to the client

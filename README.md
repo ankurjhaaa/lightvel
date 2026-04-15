@@ -48,6 +48,8 @@ Lightvel lets you build **fully reactive, single-page experiences** inside stand
   - [SPA Navigation](#spa-navigation)
   - [State Management](#state-management)
 - [Patch Operations](#patch-operations)
+- [Loading Indicators](#loading-indicators)
+- [Dynamic Route Parameters](#dynamic-route-parameters)
 - [Layouts](#layouts)
 - [Configuration](#configuration)
 - [Artisan Commands](#artisan-commands)
@@ -561,6 +563,152 @@ public function deleteUser(int $id): array
 ```
 
 > **How it works:** Returns a `__patch` key in the JSON response. The JS runtime reads this and modifies the array in-place, then re-renders `light:for` templates. No full page refresh.
+
+---
+
+## Loading Indicators
+
+Show loading states during AJAX actions. Elements with `light:loading` are **hidden by default** and only appear while an action is running.
+
+### Basic Loading
+
+```html
+<button light:click="saveUser">Save</button>
+<span light:loading>Saving...</span>
+```
+
+### Default Spinner
+
+Lightvel includes a built-in spinner CSS class:
+
+```html
+<button light:click="saveUser">Save</button>
+<span light:loading class="lightvel-spinner"></span>
+```
+
+### Skeleton/Shimmer Loading
+
+Use the built-in skeleton class for placeholder content:
+
+```html
+<div light:loading>
+    <div class="lightvel-skeleton" style="width:200px;height:20px"></div>
+    <div class="lightvel-skeleton" style="width:150px;height:20px;margin-top:8px"></div>
+</div>
+```
+
+### Delay (avoid flash for fast requests)
+
+Only show the loading indicator if the request takes longer than the delay:
+
+```html
+<!-- Show only if request takes > 300ms -->
+<span light:loading light:loading.delay="300">Loading...</span>
+```
+
+### Minimum Display Time (timer)
+
+Force the loading indicator to show for at least a minimum time. Even if data arrives early, it stays visible until the timer expires. Data is held back and revealed only when the timer completes.
+
+```html
+<!-- Show for at least 2 seconds -->
+<div light:loading light:loading.min="2000">
+    <div class="lightvel-spinner"></div>
+    <p>Processing your request...</p>
+</div>
+```
+
+### Combined: Delay + Min
+
+```html
+<!-- Wait 300ms before showing, then show for at least 1 second -->
+<span light:loading light:loading.delay="300" light:loading.min="1000">
+    Please wait...
+</span>
+```
+
+---
+
+## Pagination
+
+Lightvel supports Laravel's built-in `paginate()` seamlessly without full-page reloads.
+
+### Backend
+
+Return a traditional paginator from your action or state:
+
+```php
+public function searchUsers(Request $request): array
+{
+    $page = (int) $request->input('page', 1);
+    
+    return [
+        // ->paginate(perPage, columns, pageName, page)
+        'users' => User::query()->paginate(10, ['*'], 'page', $page),
+    ];
+}
+```
+
+### Frontend
+
+Add `light:paginate` with the list name, and specify the action to run when a page is clicked using `light:paginate-action`:
+
+```html
+<!-- Table iterating over the items -->
+<table>
+    <tr light:for="user in users">
+        <td light:text="user.name"></td>
+    </tr>
+</table>
+
+<!-- Renders Tailwind pagination links automatically! -->
+<div light:paginate="users" light:paginate-action="searchUsers"></div>
+```
+
+When a user clicks "Next", Lightvel will run `searchUsers({ page: 2 })` and instantly update the table with smooth DOM patch rendering.
+
+---
+
+## Dynamic Route Parameters
+
+Pass route parameters directly to your `lightvel()` method:
+
+### Route Definition
+
+```php
+// routes/web.php
+Route::lightvel('/product/{id}', 'pages.product');
+Route::lightvel('/post/{slug}/{tab}', 'pages.post');
+```
+
+### Component
+
+Parameters are passed in order to `lightvel()` as arguments:
+
+```blade
+@php
+use Lightvel\Component;
+use Illuminate\Http\Request;
+
+new #[Layout('app')] class extends Component {
+    // $id receives the {id} from the route
+    public function lightvel($id): array
+    {
+        return [
+            'product' => Product::findOrFail($id),
+        ];
+    }
+
+    // Multiple params: lightvel($slug, $tab)
+    // ↑ matches Route::lightvel('/post/{slug}/{tab}', ...)
+};
+@endphp
+
+<div light:state="product={}">
+    <h1 light:text="product.name"></h1>
+    <p light:text="product.description"></p>
+</div>
+```
 
 ---
 

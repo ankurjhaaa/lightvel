@@ -31,6 +31,10 @@ use Lightvel\Support\Assets;
  *   light:debounce="300"     → data-light-debounce="300"     → getElementDebounceMs() delay
  *   light:error="field"      → data-light-error="field"      → renderErrors() error display
  *   light:navigate            → data-light-navigate="true"    → navigateTo() SPA navigation
+ *   light:loading              → data-light-loading="true"     → shown while AJAX is pending
+ *   light:loading.delay="500"  → data-light-loading-delay      → show after delay ms
+ *   light:loading.min="1000"   → data-light-loading-min        → show for at least min ms
+ *   light:paginate="key"       → data-light-paginate="key"     → auto pagination controls
  *
  * @lightScripts directive outputs the full JS runtime inline via Assets::scripts()
  *
@@ -106,6 +110,16 @@ class Directives
 
             // --- SPA navigation ---
             $view = preg_replace('/\s+light:navigate(?:="[^"]*")?/', ' data-light-navigate="true"', $view);
+
+            // --- Loading indicators ---
+            // light:loading.delay="500" + light:loading.min="1000" with modifiers
+            $view = preg_replace('/light:loading\.delay="([^"]+)"/', 'data-light-loading-delay="$1"', $view);
+            $view = preg_replace('/light:loading\.min="([^"]+)"/', 'data-light-loading-min="$1"', $view);
+            // light:loading (base) — must come AFTER .delay/.min to avoid partial match
+            $view = preg_replace('/light:loading(?:="([^"]*)")?/', 'data-light-loading="${1:-true}"', $view);
+
+            // --- Pagination ---
+            $view = preg_replace('/light:paginate="([^"]+)"/', 'data-light-paginate="$1"', $view);
 
             return $view;
         });

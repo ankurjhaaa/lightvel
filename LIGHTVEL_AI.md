@@ -33,6 +33,7 @@ routes/web.php                 ← Route::lightvel('/url', 'pages.your-page');
 ```php
 // routes/web.php
 Route::lightvel('/users', 'pages.users');
+Route::lightvel('/product/{id}', 'pages.product');  // dynamic params
 ```
 
 ### Step 2: Blade File
@@ -49,6 +50,7 @@ new #[Layout('app')] class extends Component {
     // INITIAL STATE — runs only on first page load (GET request).
     // Returns an array of key-value pairs that become reactive state.
     // This method is SKIPPED on AJAX action calls for performance.
+    // Route params are passed as arguments: lightvel($id) for /product/{id}
     public function lightvel(): array
     {
         return [
@@ -199,11 +201,23 @@ Supported rules: `required`, `email`, `numeric`, `min:N`, `max:N`
 | `light:const="..."` | Read-only constants | `<div light:const="maxItems=100">` |
 | `light:debounce="ms"` | Delay action | `<input light:debounce="300">` |
 
-### Navigation
+### Navigation & Loading
 
 | Directive | Purpose | Example |
 |-----------|---------|---------|
 | `light:navigate` | SPA-style link | `<a href="/page" light:navigate>` |
+| `light:loading` | Show during AJAX | `<span light:loading>Loading...</span>` |
+| `light:loading.delay="ms"` | Show only after delay | `<span light:loading light:loading.delay="300">` |
+| `light:loading.min="ms"` | Show for minimum time | `<span light:loading light:loading.min="1000">` |
+
+Built-in CSS classes: `lightvel-spinner` (circular), `lightvel-skeleton` (shimmer).
+
+### Pagination
+
+| Directive | Purpose | Example |
+|-----------|---------|---------|
+| `light:paginate="key"` | Builds pagination UI | `<div light:paginate="users" light:paginate-action="loadPage">` |
+| `light:paginate-action`| Action on page click | (Required) action to fetch next page |
 
 ---
 
@@ -351,9 +365,12 @@ Always return `'message' => 'Your message'` from actions.
 
 8. **Layout must have `@lightScripts` before `</body>`** and `<meta name="csrf-token">` in `<head>`.
 
-9. **Route format:** `Route::lightvel('/url', 'folder.view-name');`
+9. **Route format:** `Route::lightvel('/url', 'folder.view-name');`  
+   **Dynamic params:** `Route::lightvel('/product/{id}', 'pages.product');` → `lightvel($id)`
 
 10. **After creating/modifying Blade files:** Run `php artisan view:clear` to rebuild compiled views.
+
+11. **Loading indicators:** Use `light:loading` for any element that should appear during AJAX. Use `lightvel-spinner` class for built-in spinner.
 
 ---
 
