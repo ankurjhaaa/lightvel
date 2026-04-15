@@ -1176,6 +1176,11 @@
                 return;
             }
 
+            // Let user build their own UI via light:for and light:click 
+            if (node.getAttribute('data-light-paginate-custom') !== null && node.getAttribute('data-light-paginate-custom') !== 'false') {
+                return;
+            }
+
             let html = `<div class="flex items-center justify-between border-t border-gray-200 px-4 py-3 sm:px-6 mt-4">`;
             
             // Mobile (Prev/Next)
@@ -1622,7 +1627,13 @@
                 let api = getJsApi();
                 api.state.status = false;
                 api.state.message = err?.message || 'Lightvel request failed';
-                syncBindings();
+                
+                try {
+                    syncBindings();
+                } catch (renderErr) {
+                    console.error('Lightvel failed to synchronize error state to the DOM:', renderErr);
+                }
+                
                 setErrors({ __global: [api.state.message] });
 
                 document.querySelectorAll('[data-light-bind="status"]').forEach((el) => {
@@ -1650,6 +1661,14 @@
     };
     window.Lightvel.clearCache = function () {
         __responseCache = {};
+    };
+    window.Lightvel.pageFromUrl = function (url) {
+        if (!url) return null;
+        try {
+            return new URL(url, window.location.href).searchParams.get('page');
+        } catch (_) {
+            return null;
+        }
     };
 
     function refreshCurrentComponent() {
@@ -1732,18 +1751,27 @@
         Object.entries(patchData).forEach(([resource, actions]) => {
             if (!actions || typeof actions !== 'object') return;
 
-            if (!Array.isArray(api.state[resource])) {
-                if (api.state[resource] && typeof api.state[resource] === 'object') {
-                    api.state[resource] = Object.values(api.state[resource]);
+            // Handle paginated targets implicitly
+            let targetArray = api.state[resource];
+            let isPaginator = false;
+
+            if (targetArray && typeof targetArray === 'object' && !Array.isArray(targetArray) && 'data' in targetArray && 'current_page' in targetArray) {
+                targetArray = targetArray.data;
+                isPaginator = true;
+            }
+
+            if (!Array.isArray(targetArray)) {
+                if (targetArray && typeof targetArray === 'object') {
+                    targetArray = Object.values(targetArray);
                     dirty = true;
                 } else {
-                    return;
+                    return; // Skip invalid patch targets
                 }
             }
 
             if (Array.isArray(actions.delete) && actions.delete.length) {
                 let deleteIds = new Set(actions.delete.map((id) => String(id)));
-                api.state[resource] = api.state[resource].filter((item) => {
+                targetArray = targetArray.filter((item) => {
                     let id = findPatchItemId(item);
                     if (id === undefined || id === null) return true;
                     return !deleteIds.has(String(id));
@@ -1760,7 +1788,7 @@
                     updatesById.set(String(id), item);
                 });
 
-                api.state[resource] = api.state[resource].map((item) => {
+                targetArray = targetArray.map((item) => {
                     let id = findPatchItemId(item);
                     if (id === undefined || id === null) return item;
 
@@ -1789,18 +1817,20 @@
                         .map((id) => String(id))
                 );
 
-                let rest = api.state[resource].filter((item) => {
+                let rest = targetArray.filter((item) => {
                     let id = findPatchItemId(item);
                     if (id === undefined || id === null) return true;
                     return !insertIds.has(String(id));
                 });
 
-                api.state[resource] = [...insertItems, ...rest];
+                targetArray = [...insertItems, ...rest];
                 dirty = true;
             }
 
-            if (dirty) {
-                api.state[resource] = [...api.state[resource]];
+            if (isPaginator) {
+                if (dirty) api.state[resource] = { ...api.state[resource], data: [...targetArray] };
+            } else if (dirty) {
+                api.state[resource] = [...targetArray];
             }
         });
 
@@ -1936,7 +1966,7 @@
                 if (delayMs > 0) {
                     // Delay: show only if request takes longer than delay
                     let timer = setTimeout(() => {
-                        el.style.display = '';
+                        el.setAttribute('data-light-loading-active', 'true');
                         __loadingDelayTimers.delete(el);
                         if (minMs > 0) {
                             __loadingMinEndTimes.set(el, Date.now() + minMs);
@@ -1944,7 +1974,7 @@
                     }, delayMs);
                     __loadingDelayTimers.set(el, timer);
                 } else {
-                    el.style.display = '';
+                    el.setAttribute('data-light-loading-active', 'true');
                     if (minMs > 0) {
                         __loadingMinEndTimes.set(el, Date.now() + minMs);
                     }
@@ -1962,7 +1992,7 @@
                 if (remaining > 0) {
                     // Min timer not expired yet — keep showing, hide later
                     let timer = setTimeout(() => {
-                        el.style.display = 'none';
+                        el.removeAttribute('data-light-loading-active');
                         __loadingMinEndTimes.delete(el);
                         __loadingDelayTimers.delete(el);
                         // Now flush any pending state updates that arrived during min-timer
@@ -1970,7 +2000,7 @@
                     }, remaining);
                     __loadingDelayTimers.set(el, timer);
                 } else {
-                    el.style.display = 'none';
+                    el.removeAttribute('data-light-loading-active');
                     __loadingMinEndTimes.delete(el);
                 }
             }
@@ -2043,10 +2073,56 @@
                     return;
                 }
 
-                window.location.href = targetUrl;
+                // Smooth SPA HTML navigation!
+                let parser = new DOMParser();
+                let doc = parser.parseFromString(result.payload, 'text/html');
+
+                // 1. Update Document Title
+                if (doc.title) {
+                    document.title = doc.title;
+                }
+
+                // 2. Clear any active state caching
+                if (window.Lightvel && window.Lightvel.clearCache) {
+                    window.Lightvel.clearCache();
+                }
+                
+                // 3. Swap body contents safely without destroying event delegation on document
+                document.body.innerHTML = doc.body.innerHTML;
+
+                // Sync body classes if any exist
+                if (doc.body.className) {
+                    document.body.className = doc.body.className;
+                }
+
+                // 4. Re-execute scripts (since innerHTML doesn't execute newly injected <script> tags)
+                document.body.querySelectorAll('script').forEach((oldScript) => {
+                    let newScript = document.createElement('script');
+                    Array.from(oldScript.attributes).forEach((attr) => newScript.setAttribute(attr.name, attr.value));
+                    newScript.appendChild(document.createTextNode(oldScript.innerHTML));
+                    oldScript.parentNode.replaceChild(newScript, oldScript);
+                });
+
+                // 5. Update browser history
+                if (!options.fromPop) {
+                    if (options.replace) {
+                        history.replaceState({}, '', targetUrl);
+                    } else {
+                        history.pushState({}, '', targetUrl);
+                    }
+                }
+
+                // 6. Reset scroll
+                if (!options.fromPop) {
+                    window.scrollTo(0, 0);
+                }
+
+                // 7. Initialize Component State and DOM bindings for the newly injected HTML
+                initJsState();
+                syncBindings();
             })
             .catch((err) => {
-                console.error('Lightvel navigation failed:', err);
+                console.error('Lightvel SPA navigation failed:', err);
                 window.location.href = targetUrl;
             })
             .finally(() => {

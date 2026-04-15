@@ -216,8 +216,12 @@ Built-in CSS classes: `lightvel-spinner` (circular), `lightvel-skeleton` (shimme
 
 | Directive | Purpose | Example |
 |-----------|---------|---------|
-| `light:paginate="key"` | Builds pagination UI | `<div light:paginate="users" light:paginate-action="loadPage">` |
-| `light:paginate-action`| Action on page click | (Required) action to fetch next page |
+| `light:paginate="key"` | Builds base pagination | `<div light:paginate="users" light:paginate-action="loadPage">` |
+| `light:paginate-custom`| Build your own UI | `<div light:paginate="..." light:paginate-custom="true">` |
+| `light:paginate-action`| Action on page click | (Required for default) action to fetch next page |
+
+*For custom designs, use:*
+`<button light:for="link in users.links" light:click="actionName({page: Lightvel.pageFromUrl(link.url)})">...`
 
 ---
 

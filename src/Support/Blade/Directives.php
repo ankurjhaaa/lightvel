@@ -120,6 +120,8 @@ class Directives
 
             // --- Pagination ---
             $view = preg_replace('/light:paginate="([^"]+)"/', 'data-light-paginate="$1"', $view);
+            $view = preg_replace('/light:paginate-link="([^"]+)"/', 'data-light-paginate-link="$1"', $view);
+            $view = preg_replace('/light:paginate-custom(?:="([^"]*)")?/', 'data-light-paginate-custom="${1:-true}"', $view);
 
             return $view;
         });

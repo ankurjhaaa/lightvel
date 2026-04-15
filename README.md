@@ -667,6 +667,21 @@ Add `light:paginate` with the list name, and specify the action to run when a pa
 
 When a user clicks "Next", Lightvel will run `searchUsers({ page: 2 })` and instantly update the table with smooth DOM patch rendering.
 
+### Custom Pagination Design
+
+If you want to provide your own pagination design instead of the built-in Tailwind UI, use `light:paginate-custom="true"`. You can then loop over `users.links` and use the `Lightvel.pageFromUrl()` helper to trigger page clicks:
+
+```html
+<div light:paginate="users" light:paginate-custom="true">
+    <button 
+        light:for="link in users.links" 
+        light:click="searchUsers({ page: Lightvel.pageFromUrl(link.url) })"
+        light:class="{'font-bold': link.active}"
+        light:text="link.label">
+    </button>
+</div>
+```
+
 ---
 
 ## Dynamic Route Parameters
