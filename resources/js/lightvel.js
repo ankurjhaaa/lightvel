@@ -235,11 +235,16 @@
         document.querySelectorAll(`[data-light-js-html="${key}"]`).forEach((el) => {
             el.innerHTML = api.state[key] ?? '';
         });
+    }
 
-        document.querySelectorAll(`[data-light-js-show]`).forEach((el) => {
+    // Run global (non-key-scoped) JS bindings — show/class/etc.
+    // These are called ONCE per sync cycle, not per-key, for performance.
+    function syncGlobalJsBindings() {
+        let api = getJsApi();
+
+        document.querySelectorAll('[data-light-js-show]').forEach((el) => {
             let expr = el.getAttribute('data-light-js-show');
             let isVisible = evalJsExpr(expr, api.state);
-
             if (isVisible) {
                 let display =
                     el.getAttribute('data-light-js-display') ||
@@ -250,29 +255,22 @@
                     (el.classList.contains('inline-block') ? 'inline-block' : '') ||
                     (el.classList.contains('block') ? 'block' : '') ||
                     'block';
-
                 el.style.display = display;
             } else {
                 el.style.display = 'none';
             }
         });
 
-        document.querySelectorAll(`[data-light-js-class]`).forEach((el) => {
+        document.querySelectorAll('[data-light-js-class]').forEach((el) => {
             let expr = el.getAttribute('data-light-js-class');
             applyConditionalClasses(el, expr, api.state);
         });
 
-        document.querySelectorAll('[data-light-class]').forEach((el) => {
-            if (el.getAttribute('data-light-scoped') === '1') {
-                return;
-            }
-
+        document.querySelectorAll('[data-light-class]:not([data-light-scoped="1"])').forEach((el) => {
             let expr = el.getAttribute('data-light-class');
             if (!expr) return;
-
             let classObj = parseClassExpression(expr);
             let evaluated = {};
-
             Object.entries(classObj).forEach(([className, condition]) => {
                 if (typeof condition === 'string') {
                     evaluated[className] = !!evaluateLightExpression(condition, api.state);
@@ -280,7 +278,6 @@
                     evaluated[className] = condition;
                 }
             });
-
             Object.entries(evaluated).forEach(([className, shouldAdd]) => {
                 if (shouldAdd) {
                     el.classList.add(className);
@@ -774,6 +771,7 @@
         syncLightTextBindings(key);
 
         if (full) {
+            syncGlobalJsBindings();
             syncLightConditionals();
             renderLightForTemplates();
             syncLightPaginate();
@@ -1158,45 +1156,73 @@
         
         document.querySelectorAll('[data-light-paginate]').forEach((node) => {
             let key = node.getAttribute('data-light-paginate');
-            let actionName = node.getAttribute('data-light-paginate-action') || node.closest('form, [data-light-submit]')?.getAttribute('data-light-submit');
+            if (!key) return;
+
+            let actionName = node.getAttribute('data-light-paginate-action')
+                || node.closest('[data-light-submit]')?.getAttribute('data-light-submit')
+                || node.closest('[data-light-click]')?.getAttribute('data-light-click');
             let paginator = api.state[key];
 
-            if (!paginator || !paginator.data || !paginator.links) {
+            // Defensive: if no paginator or not a valid paginator object, hide gracefully
+            if (!paginator || typeof paginator !== 'object' || Array.isArray(paginator)) {
                 node.innerHTML = '';
                 return;
             }
 
-            // Don't re-render if it's the exact same paginator reference
-            if (node._lightPaginateLastRef === paginator) return;
-            node._lightPaginateLastRef = paginator;
-
-            // Stop if only 1 page
-            if (paginator.links.length <= 3) {
+            // Must have at minimum current_page and data array to be a valid paginator
+            if (!('current_page' in paginator) || !('data' in paginator)) {
                 node.innerHTML = '';
                 return;
             }
 
             // Let user build their own UI via light:for and light:click 
-            if (node.getAttribute('data-light-paginate-custom') !== null && node.getAttribute('data-light-paginate-custom') !== 'false') {
+            if (node.hasAttribute('data-light-paginate-custom')) {
+                let val = node.getAttribute('data-light-paginate-custom');
+                if (val !== 'false' && val !== '0') return;
+            }
+
+            // Don't re-render if it's the exact same paginator reference
+            if (node._lightPaginateLastRef === paginator && node._lightPaginateLastPage === paginator.current_page) return;
+            node._lightPaginateLastRef = paginator;
+            node._lightPaginateLastPage = paginator.current_page;
+
+            // Helper to safely extract page number from a URL string
+            function safePageFromUrl(url) {
+                if (!url) return null;
+                try {
+                    return new URL(url, window.location.href).searchParams.get('page');
+                } catch (_) {
+                    // Fallback: regex extract
+                    let m = String(url).match(/[?&]page=(\d+)/);
+                    return m ? m[1] : null;
+                }
+            }
+
+            // Check if links array is available (paginate() provides it, simplePaginate() doesn't)
+            let hasLinks = Array.isArray(paginator.links) && paginator.links.length > 0;
+            let lastPage = paginator.last_page || 1;
+            let currentPage = paginator.current_page || 1;
+
+            // Stop if only 1 page
+            if (lastPage <= 1 && !paginator.next_page_url) {
+                node.innerHTML = '';
                 return;
             }
 
-            let html = `<div class="flex items-center justify-between border-t border-gray-200 px-4 py-3 sm:px-6 mt-4">`;
+            let html = `<div class="lv-pagination flex items-center justify-between border-t border-gray-200 px-4 py-3 sm:px-6 mt-4">`;
             
             // Mobile (Prev/Next)
             html += `<div class="flex flex-1 justify-between sm:hidden">`;
-            let prevLink = paginator.links[0];
-            let nextLink = paginator.links[paginator.links.length - 1];
+            let prevPage = paginator.prev_page_url ? safePageFromUrl(paginator.prev_page_url) : null;
+            let nextPage = paginator.next_page_url ? safePageFromUrl(paginator.next_page_url) : null;
             
-            if (prevLink.url) {
-                let pageStr = new URL(prevLink.url).searchParams.get('page');
-                html += `<button type="button" data-lv-page="${pageStr}" class="lv-paginate-btn relative inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Previous</button>`;
+            if (prevPage) {
+                html += `<button type="button" data-lv-page="${prevPage}" class="lv-paginate-btn relative inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Previous</button>`;
             } else {
                 html += `<span class="relative inline-flex items-center rounded-md border border-gray-300 bg-gray-100 px-4 py-2 text-sm font-medium text-gray-400 cursor-not-allowed">Previous</span>`;
             }
-            if (nextLink.url) {
-                let pageStr = new URL(nextLink.url).searchParams.get('page');
-                html += `<button type="button" data-lv-page="${pageStr}" class="lv-paginate-btn relative ml-3 inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Next</button>`;
+            if (nextPage) {
+                html += `<button type="button" data-lv-page="${nextPage}" class="lv-paginate-btn relative ml-3 inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Next</button>`;
             } else {
                 html += `<span class="relative ml-3 inline-flex items-center rounded-md border border-gray-300 bg-gray-100 px-4 py-2 text-sm font-medium text-gray-400 cursor-not-allowed">Next</span>`;
             }
@@ -1205,27 +1231,41 @@
             // Desktop view
             html += `<div class="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
                 <div>
-                    <p class="text-sm text-gray-700">Showing <span class="font-medium">${paginator.from || 0}</span> to <span class="font-medium">${paginator.to || 0}</span> of <span class="font-medium">${paginator.total || 0}</span> results</p>
+                    <p class="text-sm text-gray-700">Showing <span class="font-medium">${paginator.from || 0}</span> to <span class="font-medium">${paginator.to || 0}</span> of <span class="font-medium">${paginator.total || '?'}</span> results</p>
                 </div>
                 <div>
                     <nav class="isolate inline-flex -space-x-px rounded-md shadow-sm bg-white" aria-label="Pagination">`;
 
-            paginator.links.forEach((link, idx) => {
-                let isFirst = idx === 0;
-                let isLast = idx === paginator.links.length - 1;
-                
-                let roundedClass = isFirst ? 'rounded-l-md' : (isLast ? 'rounded-r-md' : '');
-                let rawLabel = String(link.label).replace('&laquo;', '«').replace('&raquo;', '»').replace('Previous', '«').replace('Next', '»');
-                
-                if (link.url === null) {
-                    html += `<span class="relative inline-flex items-center px-4 py-2 text-sm font-semibold text-gray-400 ring-1 ring-inset ring-gray-300 ${roundedClass}">${rawLabel}</span>`;
-                } else if (link.active) {
-                    html += `<span class="relative z-10 inline-flex items-center bg-indigo-600 px-4 py-2 text-sm font-semibold text-white focus:z-20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 ${roundedClass}">${rawLabel}</span>`;
-                } else {
-                    let pageStr = new URL(link.url).searchParams.get('page');
-                    html += `<button type="button" data-lv-page="${pageStr}" class="lv-paginate-btn relative inline-flex items-center px-4 py-2 text-sm font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 ${roundedClass}">${rawLabel}</button>`;
+            if (hasLinks) {
+                paginator.links.forEach((link, idx) => {
+                    if (!link || typeof link !== 'object') return;
+                    let isFirst = idx === 0;
+                    let isLast = idx === paginator.links.length - 1;
+                    
+                    let roundedClass = isFirst ? 'rounded-l-md' : (isLast ? 'rounded-r-md' : '');
+                    let rawLabel = String(link.label || '')
+                        .replace(/&laquo;/g, '«').replace(/&raquo;/g, '»')
+                        .replace('Previous', '«').replace('Next', '»');
+                    
+                    if (!link.url) {
+                        html += `<span class="relative inline-flex items-center px-4 py-2 text-sm font-semibold text-gray-400 ring-1 ring-inset ring-gray-300 ${roundedClass}">${rawLabel}</span>`;
+                    } else if (link.active) {
+                        html += `<span class="relative z-10 inline-flex items-center bg-indigo-600 px-4 py-2 text-sm font-semibold text-white focus:z-20 ${roundedClass}">${rawLabel}</span>`;
+                    } else {
+                        let pageStr = safePageFromUrl(link.url) || '1';
+                        html += `<button type="button" data-lv-page="${pageStr}" class="lv-paginate-btn relative inline-flex items-center px-4 py-2 text-sm font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 ${roundedClass}">${rawLabel}</button>`;
+                    }
+                });
+            } else {
+                // Fallback for simplePaginate (no links array)
+                if (prevPage) {
+                    html += `<button type="button" data-lv-page="${prevPage}" class="lv-paginate-btn relative inline-flex items-center rounded-l-md px-4 py-2 text-sm font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50">«</button>`;
                 }
-            });
+                html += `<span class="relative z-10 inline-flex items-center bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">${currentPage}</span>`;
+                if (nextPage) {
+                    html += `<button type="button" data-lv-page="${nextPage}" class="lv-paginate-btn relative inline-flex items-center rounded-r-md px-4 py-2 text-sm font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50">»</button>`;
+                }
+            }
 
             html += `</nav></div></div></div>`;
             node.innerHTML = html;
@@ -1234,26 +1274,18 @@
             node.querySelectorAll('.lv-paginate-btn').forEach(btn => {
                 btn.addEventListener('click', (e) => {
                     e.preventDefault();
+                    let pageNum = parseInt(btn.getAttribute('data-lv-page'), 10);
+                    if (isNaN(pageNum) || pageNum < 1) return;
+
                     if (!actionName) {
-                        console.warn('Lightvel: light:paginate requires light:paginate-action="myAction" on the element, or it must be inside a form with light:submit="myAction"');
+                        // No action specified — try URL-based navigation as fallback
+                        let url = new URL(window.location.href);
+                        url.searchParams.set('page', pageNum);
+                        window.location.href = url.toString();
                         return;
                     }
                     
-                    let pageNum = parseInt(btn.getAttribute('data-lv-page'), 10);
-                    
-                    // Call the action with the page number
-                    let form = node.closest('form[data-light-submit]');
-                    let payload = {};
-                    if (form) {
-                        payload = {
-                            ...collect(form),
-                            ...Object.fromEntries(new FormData(form).entries())
-                        };
-                    }
-                    // Inject page
-                    payload.page = pageNum;
-                    
-                    call(actionName, payload);
+                    call(actionName, { page: pageNum });
                 });
             });
         });
@@ -1540,7 +1572,7 @@
         // --- Loading: show indicators ---
         __lightLoadingCount++;
         __loadingStartTime = Date.now();
-        syncLoadingElements(true);
+        syncLoadingElements(true, action);
 
         return fetch(endpoint, {
             method: 'POST',
@@ -1648,7 +1680,7 @@
                 // --- Loading: hide indicators ---
                 __lightLoadingCount = Math.max(0, __lightLoadingCount - 1);
                 if (__lightLoadingCount === 0) {
-                    syncLoadingElements(false);
+                    syncLoadingElements(false, action);
                 }
             });
     }
@@ -1931,28 +1963,40 @@
 
         flushSyncBindings();
 
-        // Patch operations already updated api.state in-place.
-        // flushSyncBindings() above re-renders light:for templates.
-        // No need for refreshCurrentComponent() — that was making a 2nd
-        // full GET request which defeated the entire purpose of patch().
+        // Re-render errors AFTER flushSyncBindings because DOM rebuild
+        // (light:for) creates new elements that need error messages applied.
+        if (hasFieldErrors || api.errors) {
+            renderErrors(api.errors || {});
+        }
     }
 
     /**
      * Show or hide loading indicator elements.
      *
      * Supports:
-     *   - data-light-loading: basic show/hide during AJAX
+     *   - data-light-loading: basic show/hide during ANY AJAX
+     *   - data-light-loading-target="actionName": show ONLY when that specific action runs
      *   - data-light-loading-delay="500": show only after delay ms (avoids flash for fast requests)
-     *   - data-light-loading-min="1000": show for at least min ms (timer requirement —
-     *     if response arrives before min, data is held back until min expires)
+     *   - data-light-loading-min="1000": show for at least min ms
      *
      * Usage in Blade:
-     *   <div light:loading>Loading...</div>
+     *   <div light:loading>Loading...</div>                               ← global (all AJAX)
+     *   <span light:loading light:loading.target="deleteUser">...</span>  ← only during deleteUser()
      *   <div light:loading light:loading.delay="300" light:loading.min="1000">Please wait...</div>
      *   <div light:loading class="lightvel-spinner"></div>  (uses default spinner CSS)
      */
-    function syncLoadingElements(isLoading) {
+    function syncLoadingElements(isLoading, actionName) {
         document.querySelectorAll('[data-light-loading]').forEach((el) => {
+            let target = el.getAttribute('data-light-loading-target') || '';
+            
+            // If this element has a target, only activate it for that specific action
+            if (target && actionName && target !== actionName) {
+                return; // Skip — this element is for a different action
+            }
+            
+            // If this element has a target but no action name provided (e.g. hiding all), still process
+            // If no target, it's a global loader — always processes
+
             let delayMs = parseInt(el.getAttribute('data-light-loading-delay') || '0', 10) || 0;
             let minMs = parseInt(el.getAttribute('data-light-loading-min') || '0', 10) || 0;
 
@@ -1995,8 +2039,6 @@
                         el.removeAttribute('data-light-loading-active');
                         __loadingMinEndTimes.delete(el);
                         __loadingDelayTimers.delete(el);
-                        // Now flush any pending state updates that arrived during min-timer
-                        flushSyncBindings();
                     }, remaining);
                     __loadingDelayTimers.set(el, timer);
                 } else {
@@ -2042,8 +2084,8 @@
         fetch(targetUrl, {
             method: 'GET',
             headers: {
-                'X-Light': 'true',
                 'X-Light-Navigate': 'true',
+                'Accept': 'text/html',
             },
         })
             .then(async (r) => {
