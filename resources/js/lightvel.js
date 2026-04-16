@@ -2008,18 +2008,10 @@
             api.state[k] = v;
         });
 
-        // Full sync: update ALL bindings including text, conditionals, loops
+        // Full sync: update ALL bindings including text, conditionals, loops.
+        // Cache was already invalidated inside applyPatchOperations(),
+        // so flushSyncBindings() → renderLightForTemplates() will rebuild DOM.
         flushSyncBindings();
-
-        // FORCE re-render light:for after patch — reset cache refs to guarantee DOM update
-        if (hasPatch) {
-            document.querySelectorAll('[data-light-for]').forEach(node => {
-                node._lightForLastRef = null;
-                node._lightForLastLen = -1;
-            });
-            renderLightForTemplates();
-            syncLightPaginate();
-        }
 
         // Re-render errors AFTER flushSyncBindings because DOM rebuild
         // (light:for) creates new elements that need error messages applied.

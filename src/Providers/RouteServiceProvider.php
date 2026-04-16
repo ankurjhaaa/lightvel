@@ -108,151 +108,99 @@ class RouteServiceProvider extends ServiceProvider
             }
 
             $path = $parsedTarget['path'] ?? '/';
-
-            $query = [];
-            if (! empty($parsedTarget['query'])) {
-                parse_str($parsedTarget['query'], $query);
-            }
-
             $action = $request->input('action', '');
             $params = $request->input('params', []);
 
-            $payload = [
-                'action' => $action,
-                'params' => $params,
-            ];
-
-            $component = (string) $request->header('X-Light-Component', (string) $request->input('component', ''));
-            $fingerprint = (string) $request->header('X-Light-Fingerprint', (string) $request->input('fingerprint', ''));
-
-            // Build server vars for the internal request forwarding
-            $server = $request->server->all();
-            $server['REQUEST_METHOD'] = 'POST';
-            $server['CONTENT_TYPE'] = 'application/json';
-            $server['HTTP_ACCEPT'] = 'application/json';
-            $server['HTTP_X_REQUESTED_WITH'] = 'XMLHttpRequest';
-            $server['HTTP_X_LIGHT'] = 'true';
-            $server['HTTP_X_LIGHT_FORWARDED'] = 'true';
-            $server['HTTP_X_LIGHT_COMPONENT'] = $component;
-            $server['HTTP_X_LIGHT_FINGERPRINT'] = $fingerprint;
-
-            // Set REQUEST_URI so that debugbar and other tools can identify the route
-            $forwardUri = $path . (empty($query) ? '' : '?' . http_build_query($query));
-            $server['REQUEST_URI'] = $forwardUri;
-
-            // Create internal request to the original page route
-            $forward = Request::create(
-                $forwardUri,
-                'POST',
-                [],
-                $request->cookies->all(),
-                [],
-                $server,
-                json_encode($payload)
-            );
-
-            // Set headers that Component::run() checks to know this is an AJAX action
-            $forward->headers->set('X-Light', 'true');
-            $forward->headers->set('X-Light-Forwarded', 'true');
-            $forward->headers->set('X-Light-Action', $action);
-            $forward->headers->set('X-Requested-With', 'XMLHttpRequest');
-            $forward->headers->set('Accept', 'application/json');
-
-            // Dispatch through Laravel's Router instead of app()->handle().
-            // This keeps everything in the SAME request lifecycle so that
-            // debugbar can capture queries, route names, and timing data.
-            $originalRequest = app('request');
-            app()->instance('request', $forward);
-            \Illuminate\Support\Facades\Request::swap($forward);
-
-            // Share the existing session with the forwarded request to prevent
-            // StartSession middleware from creating a duplicate session.
-            if ($request->hasSession()) {
-                $forward->setLaravelSession($request->session());
-            }
-
+            // Match the target URL to a registered route to find the view name
+            $fakeRequest = Request::create($path, 'GET');
             try {
-                $response = app(\Illuminate\Routing\Router::class)->dispatch($forward);
-            } finally {
-                // Restore original request so the outer request context is clean
-                app()->instance('request', $originalRequest);
-                \Illuminate\Support\Facades\Request::swap($originalRequest);
-            }
-
-            // Fallback: if POST returns 404/405, retry as GET with base64 payload
-            // This handles routes that only accept GET (e.g. Route::get())
-            if (in_array($response->getStatusCode(), [404, 405], true)) {
-                $query['_light_payload'] = base64_encode(json_encode($payload));
-
-                $server['REQUEST_METHOD'] = 'GET';
-                unset($server['CONTENT_TYPE']);
-                $fallbackUri = $path . '?' . http_build_query($query);
-                $server['REQUEST_URI'] = $fallbackUri;
-
-                $fallback = Request::create(
-                    $fallbackUri,
-                    'GET',
-                    [],
-                    $request->cookies->all(),
-                    [],
-                    $server,
-                    null
-                );
-
-                $fallback->headers->set('X-Light', 'true');
-                $fallback->headers->set('X-Light-Forwarded', 'true');
-                $fallback->headers->set('X-Light-Action', $action);
-                $fallback->headers->set('X-Requested-With', 'XMLHttpRequest');
-                $fallback->headers->set('Accept', 'application/json');
-
-                $originalRequest2 = app('request');
-                app()->instance('request', $fallback);
-                \Illuminate\Support\Facades\Request::swap($fallback);
-
-                try {
-                    $response = app(\Illuminate\Routing\Router::class)->dispatch($fallback);
-                } finally {
-                    app()->instance('request', $originalRequest2);
-                    \Illuminate\Support\Facades\Request::swap($originalRequest2);
-                }
-            }
-
-            // Return the JSON response to the client
-            if ($response instanceof \Illuminate\Http\JsonResponse) {
-                return $response;
-            }
-
-            $status = $response->getStatusCode();
-            $contentType = strtolower((string) $response->headers->get('Content-Type', ''));
-            $content = (string) $response->getContent();
-
-            // Try to decode JSON from the response content
-            if ($content !== '' && str_contains($contentType, 'application/json')) {
-                $decoded = json_decode($content, true);
-
-                if (is_array($decoded)) {
-                    return response()->json($decoded, $status);
-                }
-            }
-
-            // Even if Content-Type isn't JSON, try parsing — Component::run() may
-            // have output JSON via echo without setting proper headers
-            if ($content !== '') {
-                $decoded = json_decode($content, true);
-
-                if (is_array($decoded)) {
-                    return response()->json($decoded, $status);
-                }
-            }
-
-            if ($status >= 400) {
+                $matchedRoute = app('router')->getRoutes()->match($fakeRequest);
+            } catch (\Throwable $e) {
                 return response()->json([
                     'status' => false,
-                    'message' => 'Lightvel action failed.',
-                ], $status);
+                    'message' => 'Route not found.',
+                ], 404);
             }
 
-            return response()->json([], $status);
+            $viewName = $matchedRoute->getAction()['view'] ?? null;
+            if (!$viewName) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Not a Lightvel route.',
+                ], 422);
+            }
+
+            // Get route parameters (e.g. {id}, {slug})
+            $routeParams = array_values($matchedRoute->parameters() ?? []);
+
+            // Set X-Light headers on the CURRENT request so Component::run()
+            // detects AJAX mode — no internal forwarding needed.
+            $originalHeaders = [
+                'X-Light' => $request->headers->get('X-Light'),
+                'X-Light-Action' => $request->headers->get('X-Light-Action'),
+                'Content-Type' => $request->headers->get('Content-Type'),
+            ];
+
+            $request->headers->set('X-Light', 'true');
+            $request->headers->set('X-Light-Action', $action);
+            $request->headers->set('Content-Type', 'application/json');
+
+            // Merge action payload into the request so Component::run() can read it
+            $request->merge([
+                'action' => $action,
+                'params' => $params,
+            ]);
+
+            // Set JSON content for Component::run() to parse
+            $request->json()->replace([
+                'action' => $action,
+                'params' => $params,
+            ]);
+
+            try {
+                // Render the view directly — Component::run() handles the AJAX action
+                // during Blade compilation. No Router::dispatch = no duplicate middleware.
+                $html = view($viewName, ['__lightvel_params' => $routeParams])->render();
+            } catch (\Throwable $e) {
+                // Restore headers
+                foreach ($originalHeaders as $key => $val) {
+                    if ($val !== null) {
+                        $request->headers->set($key, $val);
+                    } else {
+                        $request->headers->remove($key);
+                    }
+                }
+
+                throw $e;
+            }
+
+            // Restore original headers
+            foreach ($originalHeaders as $key => $val) {
+                if ($val !== null) {
+                    $request->headers->set($key, $val);
+                } else {
+                    $request->headers->remove($key);
+                }
+            }
+
+            // Component::run() returns JSON for AJAX requests.
+            // The view rendering captures this as HTML content, but the actual
+            // JSON response was already sent by Component. Try to extract it.
+            $decoded = json_decode($html, true);
+            if (is_array($decoded)) {
+                return response()->json($decoded);
+            }
+
+            // Sometimes the response is embedded in HTML wrappers
+            $html = trim($html);
+            if ($html !== '' && $html[0] === '{') {
+                $decoded = json_decode($html, true);
+                if (is_array($decoded)) {
+                    return response()->json($decoded);
+                }
+            }
+
+            return response()->json((object) []);
         };
 
         // ------------------------------------------------------------------
