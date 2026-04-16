@@ -135,9 +135,10 @@ class Directives
         });
 
         // @lightScripts directive — outputs the full Lightvel JS runtime inline
-        // Place this in your layout file before </body>
+        // Renders at RUNTIME (not compile-time) so the compiled view stays small.
+        // Assets::scripts() caches the JS content in memory after first call.
         Blade::directive('lightScripts', function () {
-            return Assets::scripts();
+            return '<?php echo \\Lightvel\\Support\\Assets::scripts(); ?>';
         });
     }
 }

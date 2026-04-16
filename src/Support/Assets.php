@@ -20,6 +20,9 @@ namespace Lightvel\Support;
  */
 class Assets
 {
+    /** @var string|null Cached JS runtime content (avoids repeated file_get_contents) */
+    private static ?string $cachedJs = null;
+
     /**
      * Return the full Lightvel runtime: boot styles + config + JS.
      */
@@ -85,8 +88,13 @@ class Assets
             . 'border-radius:4px;min-height:1em;}'
             . '</style>';
 
+        // Cache JS content in memory — file_get_contents runs only once per process
+        if (self::$cachedJs === null) {
+            self::$cachedJs = is_file($path) ? file_get_contents($path) : '';
+        }
+
         return $bootStyles . PHP_EOL
             . '<script>' . $boot . '</script>' . PHP_EOL
-            . '<script>' . PHP_EOL . (is_file($path) ? file_get_contents($path) : '') . PHP_EOL . '</script>';
+            . '<script>' . PHP_EOL . self::$cachedJs . PHP_EOL . '</script>';
     }
 }

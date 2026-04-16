@@ -129,21 +129,24 @@ class Compiler
             \$__lightvelFingerprint = substr(sha1(\$__lightvelView . '|' . request()->path() . '|' . get_class(\$__lv)), 0, 20);
             \$__lightvelEndpoint = '/lightvel-' . \$__lightvelFingerprint . '/update';
 
+            // HTML-safe JSON flags — avoids expensive htmlspecialchars() on large state.
+            // json_encode with these flags escapes <, >, &, \", ' as \uXXXX sequences,
+            // making the output safe for HTML attributes without a second O(n) pass.
+            \$__jsonFlags = JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE;
+
             // Serialize validation rules for client-side validation
-            // JS: getRootRules() reads this → validateValue() uses them
             \$__rules = \$__lv->rulesForClient();
-                \$__rulesAttr = empty(\$__rules) ? '' : ' data-light-server-rules=\"' . htmlspecialchars(json_encode(\$__rules), ENT_QUOTES, 'UTF-8') . '\"';
+            \$__rulesAttr = empty(\$__rules) ? '' : ' data-light-server-rules=\"' . json_encode(\$__rules, \$__jsonFlags) . '\"';
 
             // Serialize state for client-side initialization
-            // JS: initJsState() reads data-light-server-state into api.state
             \$__state = \$__lv->stateForClient();
-            \$__stateAttr = empty(\$__state) ? '' : ' data-light-server-state=\"' . htmlspecialchars(json_encode(\$__state), ENT_QUOTES, 'UTF-8') . '\"';
+            \$__stateAttr = empty(\$__state) ? '' : ' data-light-server-state=\"' . json_encode(\$__state, \$__jsonFlags) . '\"';
 
             // Build the data-light-root wrapper with all metadata attributes
             \$__metaAttr =
-                ' data-light-endpoint=\"' . htmlspecialchars(\$__lightvelEndpoint, ENT_QUOTES, 'UTF-8') . '\"' .
-                ' data-light-component=\"' . htmlspecialchars(\$__lightvelView, ENT_QUOTES, 'UTF-8') . '\"' .
-                ' data-light-fingerprint=\"' . htmlspecialchars(\$__lightvelFingerprint, ENT_QUOTES, 'UTF-8') . '\"';
+                ' data-light-endpoint=\"' . \$__lightvelEndpoint . '\"' .
+                ' data-light-component=\"' . \$__lightvelView . '\"' .
+                ' data-light-fingerprint=\"' . \$__lightvelFingerprint . '\"';
 
             \$__dom = '<div data-light-root' . \$__metaAttr . \$__rulesAttr . \$__stateAttr . '>' . \$__content . '</div>';
 
@@ -181,12 +184,11 @@ class Compiler
             }
 
             // --- Initial render path ---
-            // Render the layout view with the component DOM as \$slot
-            \$__rendered = view(\$__layoutView, array_merge(\$__layoutParams, [
-                'slot' => \$__dom,
+            // Use \$__env->make() to reuse existing Blade environment (faster than view() helper
+            // which resolves ViewFactory from container on each call)
+            echo \$__env->make(\$__layoutView, array_merge(\$__layoutParams, [
+                'slot' => new \\Illuminate\\Support\\HtmlString(\$__dom),
             ]))->render();
-
-            echo \$__rendered;
 
             return;
             ?>";
