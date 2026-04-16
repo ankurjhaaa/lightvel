@@ -136,11 +136,11 @@ class Compiler
 
             // Serialize validation rules for client-side validation
             \$__rules = \$__lv->rulesForClient();
-            \$__rulesAttr = empty(\$__rules) ? '' : ' data-light-server-rules=\"' . json_encode(\$__rules, \$__jsonFlags) . '\"';
+            \$__rulesAttr = empty(\$__rules) ? '' : ' data-light-server-rules=\'' . json_encode(\$__rules, \$__jsonFlags) . '\'';
 
             // Serialize state for client-side initialization
             \$__state = \$__lv->stateForClient();
-            \$__stateAttr = empty(\$__state) ? '' : ' data-light-server-state=\"' . json_encode(\$__state, \$__jsonFlags) . '\"';
+            \$__stateAttr = empty(\$__state) ? '' : ' data-light-server-state=\'' . json_encode(\$__state, \$__jsonFlags) . '\'';
 
             // Build the data-light-root wrapper with all metadata attributes
             \$__metaAttr =
