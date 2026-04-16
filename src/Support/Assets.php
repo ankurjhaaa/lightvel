@@ -66,6 +66,10 @@ class Assets
             . '[data-light-booting] [data-light-text]{visibility:hidden;}'
             // Loading elements are hidden by default, shown only during AJAX
             . '[data-light-loading]:not([data-light-loading-active="true"]){display:none !important;}'
+            // Cloak: SHOWN during boot (initial page load), HIDDEN after JS init
+            // Without data-light-booting: hidden. With data-light-booting: visible.
+            . '[data-light-cloak]{display:none !important;}'
+            . '[data-light-booting] [data-light-cloak]{display:block !important;}'
             // Default spinner — use class="lightvel-spinner" for a built-in spinner
             . '@keyframes lightvel-spin{to{transform:rotate(360deg)}}'
             . '.lightvel-spinner{display:inline-block;width:20px;height:20px;'

@@ -49,6 +49,8 @@ Lightvel lets you build **fully reactive, single-page experiences** inside stand
   - [State Management](#state-management)
 - [Patch Operations](#patch-operations)
 - [Loading Indicators](#loading-indicators)
+- [Initial Page Loader](#initial-page-loader-lightcloak)
+- [Pagination](#pagination)
 - [Dynamic Route Parameters](#dynamic-route-parameters)
 - [Layouts](#layouts)
 - [Configuration](#configuration)
@@ -582,8 +584,66 @@ Show loading states during AJAX actions. Elements with `light:loading` are **hid
 Lightvel includes a built-in spinner CSS class:
 
 ```html
-<button light:click="saveUser">Save</button>
 <span light:loading class="lightvel-spinner"></span>
+```
+
+### Targeted Loading (`light:loading.target`)
+
+Show a spinner **only when a specific action** is running. Other actions won't trigger it:
+
+```html
+<!-- This spinner shows ONLY during saveUser, not during deleteUser or search -->
+<span light:loading light:loading.target="saveUser" class="lightvel-spinner"></span>
+
+<!-- This one shows ONLY during deleteUser -->
+<span light:loading light:loading.target="deleteUser" class="lightvel-spinner"></span>
+```
+
+### Custom Loading Text
+
+Put **any content** inside `light:loading` — text, spinners, icons, anything. It's hidden by default and shown during the action:
+
+```html
+<button light:click="saveUser" class="relative">
+    <!-- Normal button text -->
+    Save User
+
+    <!-- Custom loading content: appears ONLY while saving -->
+    <span light:loading light:loading.target="saveUser">
+        <span class="lightvel-spinner" style="width:14px;height:14px;"></span>
+        Saving...
+    </span>
+</button>
+```
+
+### Delay (avoid flash for fast requests)
+
+Only show the loading indicator if the request takes longer than the delay:
+
+```html
+<!-- Show only if request takes > 300ms -->
+<span light:loading light:loading.delay="300">Loading...</span>
+```
+
+### Minimum Display Time
+
+Keep the loading indicator visible for at least a minimum time:
+
+```html
+<!-- Show for at least 2 seconds -->
+<div light:loading light:loading.min="2000">
+    <div class="lightvel-spinner"></div>
+    <p>Processing your request...</p>
+</div>
+```
+
+### Combined: Delay + Min + Target
+
+```html
+<!-- Wait 300ms before showing, show for at least 1s, only during search -->
+<span light:loading light:loading.target="searchUsers" light:loading.delay="300" light:loading.min="1000">
+    Searching...
+</span>
 ```
 
 ### Skeleton/Shimmer Loading
@@ -597,89 +657,142 @@ Use the built-in skeleton class for placeholder content:
 </div>
 ```
 
-### Delay (avoid flash for fast requests)
+---
 
-Only show the loading indicator if the request takes longer than the delay:
+## Initial Page Loader (`light:cloak`)
 
-```html
-<!-- Show only if request takes > 300ms -->
-<span light:loading light:loading.delay="300">Loading...</span>
-```
+Show a loading placeholder **until the page is fully initialized**. Cloaked elements are **visible during boot** and **hidden after JS initializes**.
 
-### Minimum Display Time (timer)
-
-Force the loading indicator to show for at least a minimum time. Even if data arrives early, it stays visible until the timer expires. Data is held back and revealed only when the timer completes.
+This is the opposite of `light:loading` — use it for initial-load skeletons:
 
 ```html
-<!-- Show for at least 2 seconds -->
-<div light:loading light:loading.min="2000">
-    <div class="lightvel-spinner"></div>
-    <p>Processing your request...</p>
+<!-- Skeleton: visible on page load, disappears when JS is ready -->
+<div light:cloak class="space-y-4 py-8">
+    <div class="h-8 w-48 lightvel-skeleton rounded"></div>
+    <div class="h-10 w-80 lightvel-skeleton rounded"></div>
+    <div class="h-12 w-full lightvel-skeleton rounded"></div>
+    <div class="h-12 w-full lightvel-skeleton rounded"></div>
 </div>
 ```
 
-### Combined: Delay + Min
-
-```html
-<!-- Wait 300ms before showing, then show for at least 1 second -->
-<span light:loading light:loading.delay="300" light:loading.min="1000">
-    Please wait...
-</span>
-```
+| Directive | During boot | After JS init |
+|-----------|-------------|---------------|
+| `light:cloak` | ✅ Visible | ❌ Hidden |
+| `light:loading` | ❌ Hidden | ✅ Visible (during AJAX) |
 
 ---
 
 ## Pagination
 
-Lightvel supports Laravel's built-in `paginate()` seamlessly without full-page reloads.
+Lightvel supports Laravel's `paginate()` with **no page reload**. Just use `paginate(N)` in PHP — the framework handles everything.
 
-### Backend
-
-Return a traditional paginator from your action or state:
+### Backend (Minimal Setup)
 
 ```php
+public function lightvel(): array
+{
+    // paginate(10) = 10 items per page, page=1 default
+    return [
+        'users' => User::query()->latest()->paginate(10),
+    ];
+}
+
+// Action for page changes + search
 public function searchUsers(Request $request): array
 {
-    $page = (int) $request->input('page', 1);
-    
+    $page = max(1, (int) $request->input('page', 1));
+    $search = (string) $request->input('search', '');
+
+    $query = User::query()->latest();
+    if ($search !== '') {
+        $query->where('name', 'like', "%{$search}%");
+    }
+
     return [
-        // ->paginate(perPage, columns, pageName, page)
-        'users' => User::query()->paginate(10, ['*'], 'page', $page),
+        'users' => $query->paginate(10, ['*'], 'page', $page),
     ];
 }
 ```
 
-### Frontend
+### Frontend (Default Pagination)
 
-Add `light:paginate` with the list name, and specify the action to run when a page is clicked using `light:paginate-action`:
+Just add two attributes — pagination UI is auto-rendered:
 
 ```html
-<!-- Table iterating over the items -->
+<!-- Table -->
 <table>
     <tr light:for="user in users">
         <td light:text="user.name"></td>
     </tr>
 </table>
 
-<!-- Renders Tailwind pagination links automatically! -->
+<!-- Auto-rendered Tailwind pagination — NO page reload -->
 <div light:paginate="users" light:paginate-action="searchUsers"></div>
 ```
 
-When a user clicks "Next", Lightvel will run `searchUsers({ page: 2 })` and instantly update the table with smooth DOM patch rendering.
+When a user clicks "Next", Lightvel calls `searchUsers({ page: 2 })` via AJAX and updates the table instantly.
 
-### Custom Pagination Design
+**Defaults (user doesn't need to set these):**
+- `page = 1` (default first page)
+- `perPage = 10` (from your `paginate(10)` call)
+- Responsive: mobile shows Prev/Next, desktop shows full page numbers
 
-If you want to provide your own pagination design instead of the built-in Tailwind UI, use `light:paginate-custom="true"`. You can then loop over `users.links` and use the `Lightvel.pageFromUrl()` helper to trigger page clicks:
+### Custom Pagination UI
+
+If you want your **own design**, add `light:paginate-custom` and build your HTML. Use `Lightvel.goToPage('resource', pageNumber)` to navigate:
 
 ```html
-<div light:paginate="users" light:paginate-custom="true">
-    <button 
-        light:for="link in users.links" 
-        light:click="searchUsers({ page: Lightvel.pageFromUrl(link.url) })"
-        light:class="{'font-bold': link.active}"
-        light:text="link.label">
-    </button>
+<div light:paginate="users" light:paginate-action="searchUsers" light:paginate-custom>
+    <div class="flex items-center gap-4">
+        <!-- Previous button -->
+        <button
+            type="button"
+            light:if="users.current_page > 1"
+            onclick="Lightvel.goToPage('users', Lightvel.js.state.users.current_page - 1)"
+            class="px-4 py-2 bg-gray-200 rounded"
+        >
+            ← Prev
+        </button>
+
+        <!-- Page info -->
+        <span>
+            Page <span light:text="users.current_page"></span>
+            of <span light:text="users.last_page"></span>
+            (<span light:text="users.total"></span> total)
+        </span>
+
+        <!-- Next button -->
+        <button
+            type="button"
+            light:if="users.current_page < users.last_page"
+            onclick="Lightvel.goToPage('users', Lightvel.js.state.users.current_page + 1)"
+            class="px-4 py-2 bg-gray-200 rounded"
+        >
+            Next →
+        </button>
+    </div>
 </div>
+```
+
+**Available paginator state keys:**
+
+| Key | Example | Description |
+|-----|---------|-------------|
+| `users.current_page` | `1` | Current page number |
+| `users.last_page` | `5` | Last page number |
+| `users.total` | `48` | Total items count |
+| `users.from` | `1` | First item on current page |
+| `users.to` | `10` | Last item on current page |
+| `users.per_page` | `10` | Items per page |
+
+**JS Helper:**
+
+```javascript
+// Navigate to page 3 of the 'users' resource
+Lightvel.goToPage('users', 3);
+
+// Access current page in JS
+Lightvel.js.state.users.current_page;
 ```
 
 ---

@@ -1281,15 +1281,15 @@
                     let pageNum = parseInt(btn.getAttribute('data-lv-page'), 10);
                     if (isNaN(pageNum) || pageNum < 1) return;
 
-                    if (!actionName) {
-                        // No action specified — try URL-based navigation as fallback
+                    if (actionName) {
+                        // AJAX call: fetch new page data without reload
+                        call(actionName, { page: pageNum });
+                    } else {
+                        // SPA fallback: navigate without full page reload
                         let url = new URL(window.location.href);
                         url.searchParams.set('page', pageNum);
-                        window.location.href = url.toString();
-                        return;
+                        navigateTo(url.toString());
                     }
-                    
-                    call(actionName, { page: pageNum });
                 });
             });
         });
@@ -1707,6 +1707,30 @@
         }
     };
 
+    /**
+     * Navigate to a specific page for a paginated resource.
+     * For custom pagination: Lightvel.goToPage('users', 3)
+     * Automatically finds the paginate-action from the matching light:paginate element.
+     */
+    window.Lightvel.goToPage = function (resource, page) {
+        let pageNum = parseInt(page, 10);
+        if (isNaN(pageNum) || pageNum < 1) return;
+
+        // Find the paginate element for this resource to get the action name
+        let paginateEl = document.querySelector('[data-light-paginate="' + resource + '"]');
+        let actionName = paginateEl
+            ? (paginateEl.getAttribute('data-light-paginate-action') || '')
+            : '';
+
+        if (actionName) {
+            call(actionName, { page: pageNum });
+        } else {
+            let url = new URL(window.location.href);
+            url.searchParams.set('page', pageNum);
+            navigateTo(url.toString());
+        }
+    };
+
     function refreshCurrentComponent() {
         let api = getJsApi();
         let root = document.querySelector('[data-light-root]');
@@ -1780,12 +1804,14 @@
      * @see Patch.php — generates the __patch payload on the server
      */
     function applyPatchOperations(api, patchData) {
-        if (!patchData || typeof patchData !== 'object') return;
+        if (!patchData || typeof patchData !== 'object') return false;
 
-        let dirty = false;
+        let anyDirty = false;
 
         Object.entries(patchData).forEach(([resource, actions]) => {
             if (!actions || typeof actions !== 'object') return;
+
+            let resourceDirty = false;
 
             // Handle paginated targets implicitly
             let targetArray = api.state[resource];
@@ -1796,81 +1822,80 @@
                 isPaginator = true;
             }
 
-            if (!Array.isArray(targetArray)) {
-                if (targetArray && typeof targetArray === 'object') {
-                    targetArray = Object.values(targetArray);
-                    dirty = true;
-                } else {
-                    return; // Skip invalid patch targets
-                }
+            // Convert object-keyed arrays to real arrays
+            if (targetArray && typeof targetArray === 'object' && !Array.isArray(targetArray)) {
+                targetArray = Object.values(targetArray);
             }
 
+            if (!Array.isArray(targetArray)) {
+                console.warn('[Lightvel Patch] Resource "' + resource + '" is not an array in state, skipping patch.');
+                return;
+            }
+
+            // --- DELETE ---
             if (Array.isArray(actions.delete) && actions.delete.length) {
                 let deleteIds = new Set(actions.delete.map((id) => String(id)));
+                let before = targetArray.length;
                 targetArray = targetArray.filter((item) => {
                     let id = findPatchItemId(item);
                     if (id === undefined || id === null) return true;
                     return !deleteIds.has(String(id));
                 });
-                dirty = true;
+                resourceDirty = true;
             }
 
+            // --- UPDATE ---
             if (Array.isArray(actions.update) && actions.update.length) {
                 let updatesById = new Map();
-
                 actions.update.forEach((item) => {
                     let id = findPatchItemId(item);
-                    if (id === undefined || id === null) return;
-                    updatesById.set(String(id), item);
+                    if (id !== undefined && id !== null) {
+                        updatesById.set(String(id), item);
+                    }
                 });
 
                 targetArray = targetArray.map((item) => {
                     let id = findPatchItemId(item);
                     if (id === undefined || id === null) return item;
-
                     let updated = updatesById.get(String(id));
-                    if (!updated || typeof updated !== 'object') {
-                        return item;
-                    }
-
-                    if (!item || typeof item !== 'object') {
-                        return updated;
-                    }
-
+                    if (!updated || typeof updated !== 'object') return item;
                     return { ...item, ...updated };
                 });
-                dirty = true;
+                resourceDirty = true;
             }
 
+            // --- INSERT ---
             if (Array.isArray(actions.insert) && actions.insert.length) {
                 let insertItems = actions.insert.filter((item) => item && typeof item === 'object');
-                if (!insertItems.length) return;
+                if (insertItems.length) {
+                    // Deduplicate: remove existing items with same ID
+                    let insertIds = new Set(
+                        insertItems
+                            .map((item) => findPatchItemId(item))
+                            .filter((id) => id !== undefined && id !== null)
+                            .map((id) => String(id))
+                    );
 
-                let insertIds = new Set(
-                    insertItems
-                        .map((item) => findPatchItemId(item))
-                        .filter((id) => id !== undefined && id !== null)
-                        .map((id) => String(id))
-                );
+                    let rest = targetArray.filter((item) => {
+                        let id = findPatchItemId(item);
+                        if (id === undefined || id === null) return true;
+                        return !insertIds.has(String(id));
+                    });
 
-                let rest = targetArray.filter((item) => {
-                    let id = findPatchItemId(item);
-                    if (id === undefined || id === null) return true;
-                    return !insertIds.has(String(id));
-                });
-
-                targetArray = [...insertItems, ...rest];
-                dirty = true;
+                    targetArray = [...insertItems, ...rest];
+                    resourceDirty = true;
+                }
             }
 
-            if (isPaginator) {
-                if (dirty) api.state[resource] = { ...api.state[resource], data: [...targetArray] };
-            } else if (dirty) {
-                api.state[resource] = [...targetArray];
-            }
+            // Write back to state
+            if (resourceDirty) {
+                if (isPaginator) {
+                    api.state[resource] = { ...api.state[resource], data: targetArray };
+                } else {
+                    api.state[resource] = targetArray;
+                }
 
-            // Force-invalidate light:for cache for this resource so DOM rebuilds
-            if (dirty) {
+                // Force-invalidate light:for cache so DOM will rebuild
                 document.querySelectorAll('[data-light-for]').forEach((node) => {
                     let expr = node.getAttribute('data-light-for') || '';
                     if (expr.includes(resource)) {
@@ -1878,10 +1903,12 @@
                         node._lightForLastLen = -1;
                     }
                 });
+
+                anyDirty = true;
             }
         });
 
-        return dirty;
+        return anyDirty;
     }
 
     /**
