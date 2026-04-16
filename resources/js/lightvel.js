@@ -593,8 +593,21 @@
     }
 
     function collect(scope = document) {
-        let values = { ...getJsApi().state };
+        let state = getJsApi().state;
+        let values = {};
 
+        // Only include scalar state values (form-level data like name, email, editingId).
+        // Skip arrays and objects (like 'users' collection) — they are data state,
+        // not form inputs, and sending them causes 10x memory/latency overhead.
+        for (let key in state) {
+            if (!Object.prototype.hasOwnProperty.call(state, key)) continue;
+            let v = state[key];
+            if (v === null || v === undefined || typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+                values[key] = v;
+            }
+        }
+
+        // Always include actual form input values (light:model bindings)
         scope.querySelectorAll('[data-light-model]').forEach((el) => {
             values[el.dataset.lightModel] = el.value ?? '';
         });
