@@ -23,6 +23,12 @@
  * @see Assets.php — outputs this script with boot styles
  */
 (function () {
+    // Singleton guard: ensure script only boots once per window lifecycle,
+    // avoiding duplicate document event listeners during SPA navigation.
+    window.Lightvel = window.Lightvel || {};
+    if (window.Lightvel._jsBooted) return;
+    window.Lightvel._jsBooted = true;
+
     // --- Progress bar (top-of-page loading indicator during AJAX) ---
     let progressEl = null;
     let progressTimer = null;
