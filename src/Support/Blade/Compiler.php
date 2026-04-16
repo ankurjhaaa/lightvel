@@ -160,6 +160,16 @@ class Compiler
                     }
 
                     \$__deltaState = \$__lv->getDeltaState();
+
+                    // Strip __patch-targeted resource keys from deltaState.
+                    // Without this, getDeltaState() serializes the ENTIRE stale
+                    // collection (e.g. 1000 users) causing massive memory/latency.
+                    if (isset(\$__payload['__patch']) && is_array(\$__payload['__patch'])) {
+                        foreach (array_keys(\$__payload['__patch']) as \$__patchKey) {
+                            unset(\$__deltaState[\$__patchKey]);
+                        }
+                    }
+
                     \$__response = array_merge(\$__deltaState, \$__payload);
                     echo json_encode(\$__response);
                     return;
