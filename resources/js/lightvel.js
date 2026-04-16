@@ -1998,6 +1998,14 @@
             return;
         }
 
+        // Collect resource names targeted by __patch BEFORE processing,
+        // so we can skip them during state merge (they'd contain stale data
+        // from getDeltaState that would overwrite the patched array).
+        let patchedResources = new Set();
+        if (payload.__patch && typeof payload.__patch === 'object') {
+            Object.keys(payload.__patch).forEach(k => patchedResources.add(k));
+        }
+
         if (payload.__patch !== undefined) {
             let patchResult = applyPatchOperations(api, payload.__patch);
             delete payload.__patch;
@@ -2005,9 +2013,10 @@
         }
 
         Object.entries(payload).forEach(([k, v]) => {
-            if (k.startsWith('__')) {
-                return;
-            }
+            if (k.startsWith('__')) return;
+            // Skip patched resources — their stale data from getDeltaState
+            // would overwrite the freshly patched client-side array.
+            if (patchedResources.has(k)) return;
             api.state[k] = v;
         });
 
