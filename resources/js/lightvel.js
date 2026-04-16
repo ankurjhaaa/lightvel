@@ -39,6 +39,7 @@
     let __loadingDelayTimers = new Map();  // el → setTimeout id
     let __loadingMinEndTimes = new Map(); // el → timestamp when min expires
     let __loadingStartTime = 0;
+    let __currentActionId = null; // Full action call e.g. "deleteUser(5)" for per-instance loading
 
     function getConfig() {
         return window.Lightvel || {};
@@ -1573,10 +1574,19 @@
             __activeControllers[cancelKey] = controller;
         }
 
+        // Build full action identifier for per-instance loading
+        // e.g. "deleteUser" with params {0:5} → "deleteUser(5)"
+        let actionId = action;
+        if (params && typeof params === 'object') {
+            let vals = Object.values(params);
+            if (vals.length) actionId = action + '(' + vals.join(',') + ')';
+        }
+
         // --- Loading: show indicators ---
         __lightLoadingCount++;
         __loadingStartTime = Date.now();
-        syncLoadingElements(true, action);
+        __currentActionId = actionId;
+        syncLoadingElements(true, action, actionId);
 
         return fetch(endpoint, {
             method: 'POST',
@@ -1684,7 +1694,8 @@
                 // --- Loading: hide indicators ---
                 __lightLoadingCount = Math.max(0, __lightLoadingCount - 1);
                 if (__lightLoadingCount === 0) {
-                    syncLoadingElements(false, action);
+                    syncLoadingElements(false, action, actionId);
+                    __currentActionId = null;
                 }
             });
     }
@@ -1991,9 +2002,9 @@
         }
 
         if (payload.__patch !== undefined) {
-            applyPatchOperations(api, payload.__patch);
+            let patchResult = applyPatchOperations(api, payload.__patch);
             delete payload.__patch;
-            hasPatch = true;
+            hasPatch = !!patchResult;
         }
 
         Object.entries(payload).forEach(([k, v]) => {
@@ -2003,7 +2014,18 @@
             api.state[k] = v;
         });
 
+        // Full sync: update ALL bindings including text, conditionals, loops
         flushSyncBindings();
+
+        // FORCE re-render light:for after patch — reset cache refs to guarantee DOM update
+        if (hasPatch) {
+            document.querySelectorAll('[data-light-for]').forEach(node => {
+                node._lightForLastRef = null;
+                node._lightForLastLen = -1;
+            });
+            renderLightForTemplates();
+            syncLightPaginate();
+        }
 
         // Re-render errors AFTER flushSyncBindings because DOM rebuild
         // (light:for) creates new elements that need error messages applied.
@@ -2027,32 +2049,37 @@
      *   <div light:loading light:loading.delay="300" light:loading.min="1000">Please wait...</div>
      *   <div light:loading class="lightvel-spinner"></div>  (uses default spinner CSS)
      */
-    function syncLoadingElements(isLoading, actionName) {
+    function syncLoadingElements(isLoading, actionName, actionId) {
         document.querySelectorAll('[data-light-loading]').forEach((el) => {
             let target = el.getAttribute('data-light-loading-target') || '';
             
-            // If this element has a target, only activate it for that specific action
+            // If this element has a target, only activate it for matching action
             if (target && actionName && target !== actionName) {
-                return; // Skip — this element is for a different action
+                return;
             }
-            
-            // If this element has a target but no action name provided (e.g. hiding all), still process
-            // If no target, it's a global loader — always processes
 
             let delayMs = parseInt(el.getAttribute('data-light-loading-delay') || '0', 10) || 0;
             let minMs = parseInt(el.getAttribute('data-light-loading-min') || '0', 10) || 0;
 
+            // Helper: toggle sibling [data-light-loading-remove] elements
+            let toggleRemove = (show) => {
+                let parent = el.parentElement;
+                if (!parent) return;
+                parent.querySelectorAll('[data-light-loading-remove]').forEach(rem => {
+                    rem.style.display = show ? '' : 'none';
+                });
+            };
+
             if (isLoading) {
-                // Clear any pending hide
                 if (__loadingDelayTimers.has(el)) {
                     clearTimeout(__loadingDelayTimers.get(el));
                     __loadingDelayTimers.delete(el);
                 }
 
                 if (delayMs > 0) {
-                    // Delay: show only if request takes longer than delay
                     let timer = setTimeout(() => {
                         el.setAttribute('data-light-loading-active', 'true');
+                        toggleRemove(false);
                         __loadingDelayTimers.delete(el);
                         if (minMs > 0) {
                             __loadingMinEndTimes.set(el, Date.now() + minMs);
@@ -2061,12 +2088,12 @@
                     __loadingDelayTimers.set(el, timer);
                 } else {
                     el.setAttribute('data-light-loading-active', 'true');
+                    toggleRemove(false);
                     if (minMs > 0) {
                         __loadingMinEndTimes.set(el, Date.now() + minMs);
                     }
                 }
             } else {
-                // Cancel any pending delay-show
                 if (__loadingDelayTimers.has(el)) {
                     clearTimeout(__loadingDelayTimers.get(el));
                     __loadingDelayTimers.delete(el);
@@ -2076,15 +2103,16 @@
                 let remaining = minEnd - Date.now();
 
                 if (remaining > 0) {
-                    // Min timer not expired yet — keep showing, hide later
                     let timer = setTimeout(() => {
                         el.removeAttribute('data-light-loading-active');
+                        toggleRemove(true);
                         __loadingMinEndTimes.delete(el);
                         __loadingDelayTimers.delete(el);
                     }, remaining);
                     __loadingDelayTimers.set(el, timer);
                 } else {
                     el.removeAttribute('data-light-loading-active');
+                    toggleRemove(true);
                     __loadingMinEndTimes.delete(el);
                 }
             }

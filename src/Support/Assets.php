@@ -66,6 +66,9 @@ class Assets
             . '[data-light-booting] [data-light-text]{visibility:hidden;}'
             // Loading elements are hidden by default, shown only during AJAX
             . '[data-light-loading]:not([data-light-loading-active="true"]){display:none !important;}'
+            // loading-remove: VISIBLE by default, HIDDEN when loading is active (button text swap)
+            . '[data-light-loading-active="true"] ~ [data-light-loading-remove],'
+            . '[data-light-loading-remove][data-light-loading-active="true"]{display:none !important;}'
             // Cloak: SHOWN during boot (initial page load), HIDDEN after JS init
             // Without data-light-booting: hidden. With data-light-booting: visible.
             . '[data-light-cloak]{display:none !important;}'

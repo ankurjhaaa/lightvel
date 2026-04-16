@@ -116,6 +116,8 @@ class Directives
             $view = preg_replace('/light:loading\.delay="([^"]+)"/', 'data-light-loading-delay="$1"', $view);
             $view = preg_replace('/light:loading\.min="([^"]+)"/', 'data-light-loading-min="$1"', $view);
             $view = preg_replace('/light:loading\.target="([^"]+)"/', 'data-light-loading-target="$1"', $view);
+            // light:loading.remove — HIDES this element when loading is active (text swap)
+            $view = preg_replace('/light:loading\.remove/', 'data-light-loading-remove', $view);
             // light:loading (base) — must come AFTER .delay/.min/.target to avoid partial match
             $view = preg_replace('/light:loading(?:="([^"]*)")?/', 'data-light-loading="${1:-true}"', $view);
 
