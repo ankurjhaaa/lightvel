@@ -2250,11 +2250,14 @@
                 }
 
                 // 8. Initialize Component State and DOM bindings for the newly injected HTML
-                initJsState();
+                initJsState(document);
                 syncBindings();
+
+                // 9. Un-hide elements previously hidden by bootStyles (since JS is now ready)
+                document.documentElement.removeAttribute('data-light-booting');
             })
             .catch((err) => {
-                console.error('Lightvel SPA navigation failed:', err);
+                console.error('[Lightvel] SPA Navigate Error:', err);
                 window.location.href = targetUrl;
             })
             .finally(() => {
