@@ -822,13 +822,17 @@
             let expr = el.getAttribute('data-light-text');
             if (!expr) return;
 
-            let value = evaluateLightExpression(expr, api.state);
-            el.innerText = value == null ? '' : String(value);
-        });
+            // Optimization: when syncing a specific key, skip text bindings
+            // that don't reference this key (avoids re-evaluating 100s of
+            // user.name/user.email expressions when typing in search input)
+            if (key && !expr.includes(key)) return;
 
-        if (!key) {
-            return;
-        }
+            let value = evaluateLightExpression(expr, api.state);
+            let text = value == null ? '' : String(value);
+            if (el.innerText !== text) {
+                el.innerText = text;
+            }
+        });
     }
 
     function syncLightConditionals() {
@@ -1864,6 +1868,17 @@
             } else if (dirty) {
                 api.state[resource] = [...targetArray];
             }
+
+            // Force-invalidate light:for cache for this resource so DOM rebuilds
+            if (dirty) {
+                document.querySelectorAll('[data-light-for]').forEach((node) => {
+                    let expr = node.getAttribute('data-light-for') || '';
+                    if (expr.includes(resource)) {
+                        node._lightForLastRef = null;
+                        node._lightForLastLen = -1;
+                    }
+                });
+            }
         });
 
         return dirty;
@@ -2137,7 +2152,10 @@
                     document.body.className = doc.body.className;
                 }
 
-                // 4. Re-execute scripts (since innerHTML doesn't execute newly injected <script> tags)
+                // 4. Re-create progress bar element (innerHTML destroyed the old one)
+                progressEl = null; // Force re-creation on next navigate
+
+                // 5. Re-execute scripts (since innerHTML doesn't execute newly injected <script> tags)
                 document.body.querySelectorAll('script').forEach((oldScript) => {
                     let newScript = document.createElement('script');
                     Array.from(oldScript.attributes).forEach((attr) => newScript.setAttribute(attr.name, attr.value));
@@ -2145,7 +2163,7 @@
                     oldScript.parentNode.replaceChild(newScript, oldScript);
                 });
 
-                // 5. Update browser history
+                // 6. Update browser history
                 if (!options.fromPop) {
                     if (options.replace) {
                         history.replaceState({}, '', targetUrl);
@@ -2154,12 +2172,12 @@
                     }
                 }
 
-                // 6. Reset scroll
+                // 7. Reset scroll
                 if (!options.fromPop) {
                     window.scrollTo(0, 0);
                 }
 
-                // 7. Initialize Component State and DOM bindings for the newly injected HTML
+                // 8. Initialize Component State and DOM bindings for the newly injected HTML
                 initJsState();
                 syncBindings();
             })

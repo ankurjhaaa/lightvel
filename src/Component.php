@@ -392,9 +392,9 @@ class Component
                 return response()->json((object) []);
             }
         } catch (ValidationException $e) {
-            // Validation failed — return errors for JS runtime to display
-            $errors = $this->getErrorBag()->getBag('default')->toArray();
-            $errors = empty($errors) ? [] : $errors;
+            // Use $e->errors() — this works with BOTH $this->validate() and $request->validate()
+            // $this->getErrorBag() only works when $this->validate() sets it.
+            $errors = $e->errors();
 
             return response()->json([
                 'status' => false,
