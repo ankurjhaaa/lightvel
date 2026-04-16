@@ -1824,7 +1824,6 @@
 
             let resourceDirty = false;
 
-            // Handle paginated targets implicitly
             let targetArray = api.state[resource];
             let isPaginator = false;
 
@@ -1833,21 +1832,30 @@
                 isPaginator = true;
             }
 
-            // Convert object-keyed arrays to real arrays
             if (targetArray && typeof targetArray === 'object' && !Array.isArray(targetArray)) {
                 targetArray = Object.values(targetArray);
             }
 
             if (!Array.isArray(targetArray)) {
-                console.warn('[Lightvel Patch] Resource "' + resource + '" is not an array in state, skipping patch.');
                 return;
             }
 
-            // --- DELETE ---
+            // Build form data from current state — match keys from existing items
+            let formData = {};
+            let sampleItem = targetArray[0];
+            if (sampleItem && typeof sampleItem === 'object') {
+                Object.keys(sampleItem).forEach(key => {
+                    if (key === 'id' || key === 'created_at' || key === 'updated_at') return;
+                    if (api.state.hasOwnProperty(key)) {
+                        formData[key] = api.state[key];
+                    }
+                });
+            }
+
+            // --- DELETE (same as before) ---
             if (Array.isArray(actions.delete) && actions.delete.length) {
-                let deleteIds = new Set(actions.delete.map((id) => String(id)));
-                let before = targetArray.length;
-                targetArray = targetArray.filter((item) => {
+                let deleteIds = new Set(actions.delete.map(id => String(id)));
+                targetArray = targetArray.filter(item => {
                     let id = findPatchItemId(item);
                     if (id === undefined || id === null) return true;
                     return !deleteIds.has(String(id));
@@ -1855,50 +1863,38 @@
                 resourceDirty = true;
             }
 
-            // --- UPDATE ---
+            // --- UPDATE (ID-only: uses form state to update matching item) ---
             if (Array.isArray(actions.update) && actions.update.length) {
-                let updatesById = new Map();
-                actions.update.forEach((item) => {
-                    let id = findPatchItemId(item);
-                    if (id !== undefined && id !== null) {
-                        updatesById.set(String(id), item);
-                    }
-                });
-
-                targetArray = targetArray.map((item) => {
+                let updateIds = new Set(actions.update.map(id => String(id)));
+                targetArray = targetArray.map(item => {
                     let id = findPatchItemId(item);
                     if (id === undefined || id === null) return item;
-                    let updated = updatesById.get(String(id));
-                    if (!updated || typeof updated !== 'object') return item;
-                    return { ...item, ...updated };
+                    if (!updateIds.has(String(id))) return item;
+                    // Merge form state into the existing item
+                    return { ...item, ...formData };
                 });
                 resourceDirty = true;
             }
 
-            // --- INSERT ---
+            // --- INSERT (ID-only: creates new item from form state + ID) ---
             if (Array.isArray(actions.insert) && actions.insert.length) {
-                let insertItems = actions.insert.filter((item) => item && typeof item === 'object');
-                if (insertItems.length) {
-                    // Deduplicate: remove existing items with same ID
-                    let insertIds = new Set(
-                        insertItems
-                            .map((item) => findPatchItemId(item))
-                            .filter((id) => id !== undefined && id !== null)
-                            .map((id) => String(id))
-                    );
+                let newItems = actions.insert.map(newId => {
+                    return { id: newId, ...formData, created_at: new Date().toISOString() };
+                });
 
-                    let rest = targetArray.filter((item) => {
-                        let id = findPatchItemId(item);
-                        if (id === undefined || id === null) return true;
-                        return !insertIds.has(String(id));
-                    });
+                // Deduplicate: remove existing items with same ID
+                let insertIds = new Set(newItems.map(item => String(item.id)));
+                let rest = targetArray.filter(item => {
+                    let id = findPatchItemId(item);
+                    if (id === undefined || id === null) return true;
+                    return !insertIds.has(String(id));
+                });
 
-                    targetArray = [...insertItems, ...rest];
-                    resourceDirty = true;
-                }
+                targetArray = [...newItems, ...rest];
+                resourceDirty = true;
             }
 
-            // Write back to state
+            // Write back
             if (resourceDirty) {
                 if (isPaginator) {
                     api.state[resource] = { ...api.state[resource], data: targetArray };
@@ -1906,13 +1902,10 @@
                     api.state[resource] = targetArray;
                 }
 
-                // Force-invalidate light:for cache so DOM will rebuild
-                document.querySelectorAll('[data-light-for]').forEach((node) => {
-                    let expr = node.getAttribute('data-light-for') || '';
-                    if (expr.includes(resource)) {
-                        node._lightForLastRef = null;
-                        node._lightForLastLen = -1;
-                    }
+                // Force-invalidate light:for cache
+                document.querySelectorAll('[data-light-for]').forEach(node => {
+                    node._lightForLastRef = null;
+                    node._lightForLastLen = -1;
                 });
 
                 anyDirty = true;
@@ -1921,6 +1914,7 @@
 
         return anyDirty;
     }
+
 
     /**
      * Process a server response and update client state.

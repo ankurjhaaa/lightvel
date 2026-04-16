@@ -85,7 +85,7 @@ new #[Layout('app')] class extends Component {
             return [
                 ...$resetForm,
                 'message' => 'User updated successfully',
-                ...patch()->update('users', $user->fresh()),
+                ...patch()->update('users', $id),
             ];
         }
 
@@ -98,7 +98,7 @@ new #[Layout('app')] class extends Component {
         return [
             ...$resetForm,
             'message' => 'User created successfully',
-            ...patch()->insert('users', $user),
+            ...patch()->insert('users', $user->id),
         ];
     }
 

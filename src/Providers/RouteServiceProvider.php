@@ -165,6 +165,12 @@ class RouteServiceProvider extends ServiceProvider
             app()->instance('request', $forward);
             \Illuminate\Support\Facades\Request::swap($forward);
 
+            // Share the existing session with the forwarded request to prevent
+            // StartSession middleware from creating a duplicate session.
+            if ($request->hasSession()) {
+                $forward->setLaravelSession($request->session());
+            }
+
             try {
                 $response = app(\Illuminate\Routing\Router::class)->dispatch($forward);
             } finally {
