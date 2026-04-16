@@ -1840,19 +1840,7 @@
                 return;
             }
 
-            // Build form data from current state — match keys from existing items
-            let formData = {};
-            let sampleItem = targetArray[0];
-            if (sampleItem && typeof sampleItem === 'object') {
-                Object.keys(sampleItem).forEach(key => {
-                    if (key === 'id' || key === 'created_at' || key === 'updated_at') return;
-                    if (api.state.hasOwnProperty(key)) {
-                        formData[key] = api.state[key];
-                    }
-                });
-            }
-
-            // --- DELETE (same as before) ---
+            // --- DELETE (bare IDs) ---
             if (Array.isArray(actions.delete) && actions.delete.length) {
                 let deleteIds = new Set(actions.delete.map(id => String(id)));
                 targetArray = targetArray.filter(item => {
@@ -1863,35 +1851,50 @@
                 resourceDirty = true;
             }
 
-            // --- UPDATE (ID-only: uses form state to update matching item) ---
+            // --- UPDATE (objects with id + changed fields) ---
             if (Array.isArray(actions.update) && actions.update.length) {
-                let updateIds = new Set(actions.update.map(id => String(id)));
-                targetArray = targetArray.map(item => {
-                    let id = findPatchItemId(item);
-                    if (id === undefined || id === null) return item;
-                    if (!updateIds.has(String(id))) return item;
-                    // Merge form state into the existing item
-                    return { ...item, ...formData };
+                let updatesById = new Map();
+                actions.update.forEach(item => {
+                    if (item && typeof item === 'object') {
+                        let id = findPatchItemId(item);
+                        if (id !== undefined && id !== null) {
+                            updatesById.set(String(id), item);
+                        }
+                    }
                 });
-                resourceDirty = true;
+
+                if (updatesById.size) {
+                    targetArray = targetArray.map(item => {
+                        let id = findPatchItemId(item);
+                        if (id === undefined || id === null) return item;
+                        let updated = updatesById.get(String(id));
+                        if (!updated) return item;
+                        return { ...item, ...updated };
+                    });
+                    resourceDirty = true;
+                }
             }
 
-            // --- INSERT (ID-only: creates new item from form state + ID) ---
+            // --- INSERT (objects with id + fields) ---
             if (Array.isArray(actions.insert) && actions.insert.length) {
-                let newItems = actions.insert.map(newId => {
-                    return { id: newId, ...formData, created_at: new Date().toISOString() };
-                });
+                let insertItems = actions.insert.filter(item => item && typeof item === 'object');
+                if (insertItems.length) {
+                    let insertIds = new Set(
+                        insertItems
+                            .map(item => findPatchItemId(item))
+                            .filter(id => id !== undefined && id !== null)
+                            .map(id => String(id))
+                    );
 
-                // Deduplicate: remove existing items with same ID
-                let insertIds = new Set(newItems.map(item => String(item.id)));
-                let rest = targetArray.filter(item => {
-                    let id = findPatchItemId(item);
-                    if (id === undefined || id === null) return true;
-                    return !insertIds.has(String(id));
-                });
+                    let rest = targetArray.filter(item => {
+                        let id = findPatchItemId(item);
+                        if (id === undefined || id === null) return true;
+                        return !insertIds.has(String(id));
+                    });
 
-                targetArray = [...newItems, ...rest];
-                resourceDirty = true;
+                    targetArray = [...insertItems, ...rest];
+                    resourceDirty = true;
+                }
             }
 
             // Write back

@@ -3,17 +3,22 @@
 namespace Lightvel\Support;
 
 /**
- * Generates __patch payloads for efficient client-side array mutations.
+ * Generates __patch payloads for surgical client-side array mutations.
  *
- * Usage:
- *   patch()->insert('users', $newId)       — Add item using form state
- *   patch()->update('users', $id)          — Update item using form state
- *   patch()->delete('users', $id)          — Remove item by id
+ * Usage (all operations send minimal data — no full model serialization):
  *
- * All operations send ONLY the ID — the JS runtime uses current form state
- * to build the data, keeping responses lightweight (minimal memory/bandwidth).
+ *   patch()->delete('users', $id)
+ *     → Removes item with matching ID from client array
  *
- * @see resources/js/lightvel.js — applyPatchOperations() processes __patch
+ *   patch()->update('users', $id, $validated)
+ *     → Updates item with matching ID using given fields
+ *     → Example: patch()->update('users', 5, ['name' => 'New Name', 'email' => 'new@test.com'])
+ *
+ *   patch()->insert('users', $id, $validated)
+ *     → Prepends new item with given ID + fields to client array
+ *     → Example: patch()->insert('users', 123, ['name' => 'John', 'email' => 'john@test.com'])
+ *
+ * @see resources/js/lightvel.js — applyPatchOperations() handles __patch
  */
 class Patch
 {
@@ -32,30 +37,34 @@ class Patch
     }
 
     /**
-     * Update item by ID — JS uses current form state values to update the row.
-     * Send just the ID (like delete) to minimize response size.
+     * Update item by ID with given fields.
+     * Only the specified fields are merged into the existing item.
      */
-    public function update(string $resource, int|string $id): array
+    public function update(string $resource, int|string $id, array $fields): array
     {
         return [
             '__patch' => [
                 $resource => [
-                    'update' => [$id],
+                    'update' => [
+                        array_merge(['id' => $id], $fields),
+                    ],
                 ],
             ],
         ];
     }
 
     /**
-     * Insert new item by ID — JS uses current form state values to create the row.
-     * Send just the new ID (like delete) to minimize response size.
+     * Insert new item with given ID + fields.
+     * Item is prepended to the array, duplicates are removed.
      */
-    public function insert(string $resource, int|string $id): array
+    public function insert(string $resource, int|string $id, array $fields): array
     {
         return [
             '__patch' => [
                 $resource => [
-                    'insert' => [$id],
+                    'insert' => [
+                        array_merge(['id' => $id], $fields),
+                    ],
                 ],
             ],
         ];
