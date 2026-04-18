@@ -154,6 +154,15 @@ The layout MUST have `@lightScripts` before `</body>` and a CSRF meta tag:
 |-----------|---------|---------|
 | `light:function="key=value"` | Set state instantly on client | `<button light:function="showModal=true">` |
 
+### Image Upload Preview
+
+| Directive | Purpose | Example |
+|-----------|---------|---------|
+| `light:image="previewKey, savedKey"` | Clickable image card with temporary file preview | `<div light:image="logo_preview_url, logo_url">` |
+
+Use `light:image` for logo/avatar editors where the image itself should open the picker.
+The selected file should appear immediately in the preview area, and the upload remains temporary until save.
+
 ### Array Selection Utilities
 
 | Directive | Purpose | Example |
@@ -203,6 +212,7 @@ Inside `light:for`, you can access:
 | `light:text="expr"` | Bind text content | `<span light:text="user.name">` |
 | `light:html="key"` | Bind raw HTML | `<div light:html="content">` |
 | `light:bind="key"` | Alias for light:text | `<span light:bind="status">` |
+| `light:src="expr"` | Bind image/iframe src attribute | `<img light:src="logo_url">` |
 | `{{ light.key }}` | Mustache syntax | `Hello, {{ light.name }}!` |
 
 ### Validation

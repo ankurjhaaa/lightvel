@@ -265,7 +265,9 @@ class Component
         );
 
         if ($validator->fails()) {
-            $this->setErrorBag(new ViewErrorBag(['default' => $validator->errors()]));
+            $errorBag = new ViewErrorBag();
+            $errorBag->put('default', $validator->errors());
+            $this->setErrorBag($errorBag);
             throw new ValidationException($validator);
         }
 
@@ -294,7 +296,9 @@ class Component
         );
 
         if ($validator->fails()) {
-            $this->setErrorBag(new ViewErrorBag(['default' => $validator->errors()]));
+            $errorBag = new ViewErrorBag();
+            $errorBag->put('default', $validator->errors());
+            $this->setErrorBag($errorBag);
             throw new ValidationException($validator);
         }
 
@@ -356,6 +360,14 @@ class Component
 
         $action = $payload['action'] ?? null;
         $params = $payload['params'] ?? [];
+
+        if (is_string($params) && $params !== '') {
+            $decodedParams = json_decode($params, true);
+
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decodedParams)) {
+                $params = $decodedParams;
+            }
+        }
 
         // Build action arguments from params
         $actionArgs = [];

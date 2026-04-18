@@ -19,6 +19,7 @@ use Lightvel\Support\Assets;
  *   light:submit="action"    → data-light-submit="action"    → submit event → call() → sendLightAction()
  *   light:text="expr"        → data-light-text="expr"        → syncLightTextBindings()
  *   light:html="expr"        → data-light-html="expr"        → innerHTML binding
+ *   light:src="expr"         → data-light-src="expr"         → src attribute binding
  *   light:show="expr"        → data-light-show="expr"        → syncLightConditionals() display toggle
  *   light:if="expr"          → data-light-if="expr"          → syncLightConditionals() display toggle
  *   light:class="expr"       → data-light-class="expr"       → syncJsBindings() class toggle
@@ -33,6 +34,7 @@ use Lightvel\Support\Assets;
  *   light:json.add="..."     → data-light-json-add="..."     → append JSON object/value into array path
  *   light:json.remove="..."  → data-light-json-remove="..."  → remove item/index from JSON array path
  *   light:json.check="..."   → data-light-json-check="..."   → check dot-path exists and print/apply state
+ *   light:image="..."        → data-light-image="..."        → image upload preview + click-to-select
  *   light:bind="key"         → data-light-bind="key"         → syncJsBindings() text binding
  *   light:rules="..."        → data-light-rules="..."        → validateElement() client-side validation
  *   light:debounce="300"     → data-light-debounce="300"     → getElementDebounceMs() delay
@@ -93,6 +95,7 @@ class Directives
                 return 'data-light-text="' . $normalizeLightExpr($match[1]) . '"';
             }, $view);
             $view = preg_replace('/light:html="([^"]+)"/', 'data-light-html="$1"', $view);
+            $view = preg_replace('/light:src="([^"]+)"/', 'data-light-src="$1"', $view);
 
             // --- State management ---
             // light:state initializes client-side reactive state
@@ -135,6 +138,11 @@ class Directives
             // light:json.check="a.b.c, 'YES', 'NO'" checks dot-path presence and prints result
             $view = preg_replace_callback('/light:json\.check="([^"]+)"/', function ($match) use ($normalizeLightExpr) {
                 return 'data-light-json-check="' . $normalizeLightExpr($match[1]) . '"';
+            }, $view);
+
+            // light:image="preview_key, source_key" wires a hidden file input and live preview.
+            $view = preg_replace_callback('/light:image="([^"]+)"/', function ($match) use ($normalizeLightExpr) {
+                return 'data-light-image="' . $normalizeLightExpr($match[1]) . '"';
             }, $view);
 
             // --- Conditional rendering ---

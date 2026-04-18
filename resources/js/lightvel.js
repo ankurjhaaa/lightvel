@@ -316,6 +316,15 @@
             let nextValue = getValueByPath(api.state, key, api.state[key] ?? '');
             el.innerHTML = nextValue ?? '';
         });
+
+        document.querySelectorAll(`[data-light-src="${key}"]`).forEach((el) => {
+            let nextValue = getValueByPath(api.state, key, api.state[key] ?? '');
+            if (nextValue != null && nextValue !== '') {
+                el.setAttribute('src', String(nextValue));
+            } else {
+                el.removeAttribute('src');
+            }
+        });
     }
 
     // Run global (non-key-scoped) JS bindings — show/class/etc.
@@ -345,6 +354,18 @@
         document.querySelectorAll('[data-light-js-class]').forEach((el) => {
             let expr = el.getAttribute('data-light-js-class');
             applyConditionalClasses(el, expr, api.state);
+        });
+
+        document.querySelectorAll('[data-light-src]:not([data-light-scoped="1"])').forEach((el) => {
+            let expr = el.getAttribute('data-light-src');
+            if (!expr) return;
+
+            let nextValue = evaluateLightExpression(expr, api.state);
+            if (nextValue != null && nextValue !== '') {
+                el.setAttribute('src', String(nextValue));
+            } else {
+                el.removeAttribute('src');
+            }
         });
 
         document.querySelectorAll('[data-light-class]:not([data-light-scoped="1"])').forEach((el) => {
@@ -955,6 +976,16 @@
         return args;
     }
 
+    function parseLightImageDirective(rawExpr) {
+        let parts = splitTopLevelArgs(rawExpr || '');
+
+        return {
+            previewKey: stripWrappingQuotes(parts[0] || ''),
+            sourceKey: stripWrappingQuotes(parts[1] || ''),
+            parts,
+        };
+    }
+
     function stripWrappingQuotes(value) {
         if (value == null) return '';
 
@@ -1340,6 +1371,33 @@
         setArrayValues(parsed.arrayKey, values, api);
     }
 
+    function applyLightImageSelection(wrapper, fileInput, api = null) {
+        if (!wrapper || !fileInput) return;
+
+        let targetApi = api || getJsApi();
+        let parsed = parseLightImageDirective(wrapper.getAttribute('data-light-image') || '');
+        if (!parsed.previewKey) return;
+
+        let file = fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
+        let fallbackValue = parsed.sourceKey ? getValueByPath(targetApi.state, parsed.sourceKey, '') : '';
+
+        if (wrapper.__lightImageTempUrl) {
+            try {
+                URL.revokeObjectURL(wrapper.__lightImageTempUrl);
+            } catch (_) {}
+            wrapper.__lightImageTempUrl = '';
+        }
+
+        if (file) {
+            let tempUrl = URL.createObjectURL(file);
+            wrapper.__lightImageTempUrl = tempUrl;
+            targetApi.set(parsed.previewKey, tempUrl);
+            return;
+        }
+
+        targetApi.set(parsed.previewKey, fallbackValue || '');
+    }
+
     /**
      * Master sync function — updates all DOM bindings for a state key.
      *
@@ -1624,6 +1682,19 @@
 
             let value = evaluateLightExpression(expr, scopeState);
             el.innerText = value == null ? '' : String(value);
+        });
+
+        scopedElements('[data-light-src]').forEach((el) => {
+            el.setAttribute('data-light-scoped', '1');
+            let expr = el.getAttribute('data-light-src');
+            if (!expr) return;
+
+            let value = evaluateLightExpression(expr, scopeState);
+            if (value != null && value !== '') {
+                el.setAttribute('src', String(value));
+            } else {
+                el.removeAttribute('src');
+            }
         });
 
         scopedElements('[data-light-show], [data-light-if]').forEach((el) => {
@@ -2244,6 +2315,94 @@
         return parseDurationMs(el.getAttribute('data-light-debounce'), __defaultDebounceDelay);
     }
 
+    function isBinaryValue(value) {
+        if (value === null || value === undefined) return false;
+
+        if (typeof File !== 'undefined' && value instanceof File) return true;
+        if (typeof Blob !== 'undefined' && value instanceof Blob) return true;
+        if (typeof FileList !== 'undefined' && value instanceof FileList) return value.length > 0;
+
+        return false;
+    }
+
+    function containsBinaryValue(value, seen = new WeakSet()) {
+        if (isBinaryValue(value)) return true;
+
+        if (!value || typeof value !== 'object') return false;
+        if (seen.has(value)) return false;
+        seen.add(value);
+
+        if (Array.isArray(value)) {
+            return value.some((item) => containsBinaryValue(item, seen));
+        }
+
+        return Object.values(value).some((item) => containsBinaryValue(item, seen));
+    }
+
+    function stripBinaryValues(value, seen = new WeakSet()) {
+        if (isBinaryValue(value)) {
+            return undefined;
+        }
+
+        if (!value || typeof value !== 'object') {
+            return value;
+        }
+
+        if (seen.has(value)) {
+            return undefined;
+        }
+
+        seen.add(value);
+
+        if (Array.isArray(value)) {
+            return value
+                .map((item) => stripBinaryValues(item, seen))
+                .filter((item) => item !== undefined);
+        }
+
+        let cleaned = {};
+        Object.entries(value).forEach(([key, item]) => {
+            let next = stripBinaryValues(item, seen);
+            if (next !== undefined) {
+                cleaned[key] = next;
+            }
+        });
+
+        return cleaned;
+    }
+
+    function appendBinaryValues(formData, value, prefix = '', seen = new WeakSet()) {
+        if (isBinaryValue(value)) {
+            if (prefix) {
+                formData.append(prefix, value);
+            }
+            return;
+        }
+
+        if (!value || typeof value !== 'object') {
+            return;
+        }
+
+        if (seen.has(value)) {
+            return;
+        }
+
+        seen.add(value);
+
+        if (Array.isArray(value)) {
+            value.forEach((item, index) => {
+                let nextPrefix = prefix ? `${prefix}[${index}]` : String(index);
+                appendBinaryValues(formData, item, nextPrefix, seen);
+            });
+            return;
+        }
+
+        Object.entries(value).forEach(([key, item]) => {
+            let nextPrefix = prefix ? `${prefix}[${key}]` : key;
+            appendBinaryValues(formData, item, nextPrefix, seen);
+        });
+    }
+
     /**
      * Dispatch an action with optional debounce.
      * The debounce prevents rapid-fire calls (e.g. search-on-type).
@@ -2368,25 +2527,43 @@
         __currentActionId = actionId;
         syncLoadingElements(true, action, actionId);
 
-        return fetch(endpoint, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest',
-                'X-CSRF-TOKEN': csrfToken,
-                'X-Light': 'true',
-                'X-Light-Component': component,
-                'X-Light-Fingerprint': fingerprint,
-            },
-            signal: controller ? controller.signal : undefined,
-            body: JSON.stringify({
+        let useFormData = containsBinaryValue(params);
+        let requestHeaders = {
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRF-TOKEN': csrfToken,
+            'X-Light': 'true',
+            'X-Light-Component': component,
+            'X-Light-Fingerprint': fingerprint,
+        };
+
+        let requestBody;
+
+        if (useFormData) {
+            let formData = new FormData();
+            formData.append('url', window.location.href);
+            formData.append('action', action);
+            formData.append('component', component);
+            formData.append('fingerprint', fingerprint);
+            formData.append('params', JSON.stringify(stripBinaryValues(params)));
+            appendBinaryValues(formData, params);
+            requestBody = formData;
+        } else {
+            requestHeaders['Content-Type'] = 'application/json';
+            requestBody = JSON.stringify({
                 url: window.location.href,
                 action,
                 params,
                 component,
                 fingerprint,
-            }),
+            });
+        }
+
+        return fetch(endpoint, {
+            method: 'POST',
+            headers: requestHeaders,
+            signal: controller ? controller.signal : undefined,
+            body: requestBody,
         })
             .then(async (r) => {
                 let contentType = r.headers.get('Content-Type') || '';
@@ -3034,6 +3211,16 @@
     // --- light:click → server-side action via AJAX ---
     // Sends the action to Component.php::run() which invokes the method
     document.addEventListener('click', (e) => {
+        let imageRoot = e.target.closest('[data-light-image]');
+        if (imageRoot) {
+            let fileInput = imageRoot.querySelector('input[type="file"]');
+            if (fileInput && !e.target.closest('input,textarea,select,button,a,label')) {
+                e.preventDefault();
+                fileInput.click();
+                return;
+            }
+        }
+
         let el = e.target.closest('[data-light-click]');
         if (!el) return;
 
@@ -3323,6 +3510,11 @@
 
     // --- change event — for selects, checkboxes, radios ---
     document.addEventListener('change', (e) => {
+        let imageRoot = e.target.closest('[data-light-image]');
+        if (imageRoot && e.target.matches('input[type="file"]')) {
+            applyLightImageSelection(imageRoot, e.target, getJsApi());
+        }
+
         let actionEl = e.target.closest('[data-light-change]');
         if (actionEl) {
             let parsed = parse(actionEl.dataset.lightChange);

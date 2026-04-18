@@ -374,6 +374,15 @@ Alias for `light:text` — binds `innerText` to a state key via the JS API.
 <span light:bind="status"></span>
 ```
 
+#### `light:src`
+
+Bind the `src` attribute for images, iframes, and similar media elements.
+
+```html
+<img light:src="logo_url" alt="Logo" />
+<iframe light:src="pdf_url"></iframe>
+```
+
 #### `light:html`
 
 Bind raw HTML content (use with caution — no XSS sanitization).
@@ -464,6 +473,22 @@ Shows a progress bar at the top during navigation. Supports browser back/forward
 
 ### State Management
 
+#### `light:image`
+
+Reusable image upload card with click-to-select behavior and immediate temporary preview.
+
+```blade
+<div light:image="logo_preview_url, logo_url" class="group relative aspect-[16/10] cursor-pointer">
+    <img light:src="logo_preview_url" alt="Logo" class="h-full w-full object-contain" />
+    <input type="file" name="logo" accept=".png,.jpg,.jpeg,.webp" hidden />
+</div>
+```
+
+- Click the image card to open the file picker.
+- The selected file is shown immediately as a temporary preview.
+- The preview stays client-side until the form is submitted.
+- The second argument is the saved URL fallback used when no temp file is chosen.
+
 ### Custom Array & JSON Directives (v1.3.49+)
 
 Lightvel now includes utility directives for fast selection logic and dynamic JSON form arrays.
@@ -511,6 +536,14 @@ Lightvel now includes utility directives for fast selection logic and dynamic JS
 - `light:json.remove="'a.b.c'"` → delete dot-path key directly
 - `light:json.check="path, yesText, noText"` → dot-path existence check
 - `light:json.check="path, yesText, noText, trueClass, falseClass"` → existence + text + class toggle
+
+#### File upload preview
+
+- `light:image="previewKey, savedKey"` → click-to-select image card with temporary preview
+
+Use `light:image` for logo/avatar tiles where you want the full area to behave like the picker.
+
+> The runtime submits file inputs as multipart form data automatically when a file is present.
 
 > Tip: For nested validation keys, both formats are supported:
 > `subjects_json.0.name` and `subjects_json[0].name`.
