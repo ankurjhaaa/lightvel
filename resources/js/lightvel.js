@@ -137,7 +137,12 @@
                 return;
             }
 
-            api.state[key] = value;
+            // Support nested paths like "user.profile.name"
+            if (key.includes('.') || key.includes('[')) {
+                setValueByPath(api.state, key, value);
+            } else {
+                api.state[key] = value;
+            }
 
             if (api._syncDepth === 0) {
                 syncBindings(key);
@@ -196,12 +201,78 @@
         return el.value ?? '';
     }
 
+    function tokenizePath(path) {
+        if (!path || typeof path !== 'string') return [];
+
+        let normalized = path
+            .replace(/\[(\d+)\]/g, '.$1')
+            .replace(/\["([^"]+)"\]/g, '.$1')
+            .replace(/\['([^']+)'\]/g, '.$1');
+
+        return normalized
+            .split('.')
+            .map((part) => part.trim())
+            .filter(Boolean);
+    }
+
+    function getValueByPath(state, path, fallback = undefined) {
+        let tokens = tokenizePath(path);
+        if (!tokens.length) return fallback;
+
+        let cursor = state;
+        for (let i = 0; i < tokens.length; i++) {
+            let token = tokens[i];
+            if (cursor == null || !Object.prototype.hasOwnProperty.call(cursor, token)) {
+                return fallback;
+            }
+            cursor = cursor[token];
+        }
+
+        return cursor;
+    }
+
+    function hasValueAtPath(state, path) {
+        let tokens = tokenizePath(path);
+        if (!tokens.length) return false;
+
+        let cursor = state;
+        for (let i = 0; i < tokens.length; i++) {
+            let token = tokens[i];
+            if (cursor == null || !Object.prototype.hasOwnProperty.call(cursor, token)) {
+                return false;
+            }
+            cursor = cursor[token];
+        }
+
+        return true;
+    }
+
+    function setValueByPath(state, path, value) {
+        let tokens = tokenizePath(path);
+        if (!tokens.length) return;
+
+        let cursor = state;
+
+        for (let i = 0; i < tokens.length - 1; i++) {
+            let key = tokens[i];
+            let nextKey = tokens[i + 1];
+
+            if (cursor[key] == null || typeof cursor[key] !== 'object') {
+                cursor[key] = /^\d+$/.test(nextKey) ? [] : {};
+            }
+
+            cursor = cursor[key];
+        }
+
+        cursor[tokens[tokens.length - 1]] = value;
+    }
+
     function syncJsBindings(key) {
         let api = getJsApi();
         if (!key) return;
 
         document.querySelectorAll(`[data-light-model="${key}"]`).forEach((el) => {
-            let nextValue = api.state[key] ?? '';
+            let nextValue = getValueByPath(api.state, key, api.state[key] ?? '');
 
             if (el.type === 'checkbox') {
                 el.checked = String(nextValue) === String(el.value || '1');
@@ -230,17 +301,20 @@
                 return;
             }
 
-            if (el.value !== api.state[key]) {
-                el.value = api.state[key] ?? '';
+            let nextValue = getValueByPath(api.state, key, api.state[key] ?? '');
+            if (el.value !== nextValue) {
+                el.value = nextValue ?? '';
             }
         });
 
         document.querySelectorAll(`[data-light-js-bind="${key}"]`).forEach((el) => {
-            el.innerText = api.state[key] ?? '';
+            let nextValue = getValueByPath(api.state, key, api.state[key] ?? '');
+            el.innerText = nextValue ?? '';
         });
 
         document.querySelectorAll(`[data-light-js-html="${key}"]`).forEach((el) => {
-            el.innerHTML = api.state[key] ?? '';
+            let nextValue = getValueByPath(api.state, key, api.state[key] ?? '');
+            el.innerHTML = nextValue ?? '';
         });
     }
 
@@ -293,6 +367,28 @@
                 }
             });
         });
+
+        document.querySelectorAll('[data-light-bind-checked]:not([data-light-scoped="1"])').forEach((el) => {
+            let expr = el.getAttribute('data-light-bind-checked');
+            if (!expr) return;
+
+            let checked = !!evaluateLightExpression(expr, api.state);
+            if (el.checked !== checked) {
+                el.checked = checked;
+            }
+        });
+
+        document.querySelectorAll('[data-light-array-check]:not([data-light-scoped="1"])').forEach((el) => {
+            let expr = el.getAttribute('data-light-array-check');
+            if (!expr) return;
+            applyArrayCheckBinding(el, expr, api.state);
+        });
+
+        document.querySelectorAll('[data-light-json-check]:not([data-light-scoped="1"])').forEach((el) => {
+            let expr = el.getAttribute('data-light-json-check');
+            if (!expr) return;
+            applyJsonCheckBinding(el, expr, api.state);
+        });
     }
 
     function initJsState(scope = document) {
@@ -341,6 +437,27 @@
             }
         });
 
+        ensureDeclaredArrayStates(scope);
+
+        api.array = api.array || {
+            has: (arrayKey, value) => arrayContainsValue(arrayKey, value, api),
+            add: (arrayKey, value) => {
+                let next = toggleArrayValue(arrayKey, value, api);
+                queueSyncBindings(arrayKey);
+                return next;
+            },
+            all: (arrayKey, values) => {
+                let next = setArrayValues(arrayKey, values, api);
+                queueSyncBindings(arrayKey);
+                return next;
+            },
+            clear: (arrayKey) => {
+                let next = setArrayValues(arrayKey, [], api);
+                queueSyncBindings(arrayKey);
+                return next;
+            },
+        };
+
         scope.querySelectorAll('[data-light-const]').forEach((el) => {
             let raw = el.getAttribute('data-light-const');
             if (!raw) return;
@@ -375,12 +492,12 @@
             if (!key) return;
 
             if (el.hasAttribute('data-light-model')) {
-                api.state[key] = getElementValue(el);
+                setValueByPath(api.state, key, getElementValue(el));
                 return;
             }
 
-            if (api.state[key] === undefined) {
-                api.state[key] = getElementValue(el);
+            if (!hasValueAtPath(api.state, key)) {
+                setValueByPath(api.state, key, getElementValue(el));
             }
         });
 
@@ -388,8 +505,8 @@
             let key = el.dataset.lightModel;
             if (!key) return;
 
-            if (api.state[key] === undefined) {
-                api.state[key] = getElementValue(el);
+            if (!hasValueAtPath(api.state, key)) {
+                setValueByPath(api.state, key, getElementValue(el));
             }
         });
 
@@ -567,9 +684,32 @@
     }
 
     function renderErrors(errors) {
+        function fieldVariants(field) {
+            let raw = String(field || '').trim();
+            if (!raw) return [];
+
+            let bracketToDot = raw.replace(/\[(\d+)\]/g, '.$1');
+            let dotToBracket = raw.replace(/\.(\d+)(?=\.|$)/g, '[$1]');
+
+            return Array.from(new Set([raw, bracketToDot, dotToBracket]));
+        }
+
+        function firstErrorMessage(field) {
+            let keys = fieldVariants(field);
+
+            for (let i = 0; i < keys.length; i++) {
+                let key = keys[i];
+                if (errors && errors[key] && errors[key][0]) {
+                    return errors[key][0];
+                }
+            }
+
+            return '';
+        }
+
         document.querySelectorAll('[data-light-error]').forEach((el) => {
             let field = el.dataset.lightError;
-            let message = (errors && errors[field] && errors[field][0]) || '';
+            let message = firstErrorMessage(field);
 
             if (message && el.dataset.lightErrorMessage) {
                 message = el.dataset.lightErrorMessage;
@@ -600,22 +740,11 @@
 
     function collect(scope = document) {
         let state = getJsApi().state;
-        let values = {};
-
-        // Only include scalar state values (form-level data like name, email, editingId).
-        // Skip arrays and objects (like 'users' collection) — they are data state,
-        // not form inputs, and sending them causes 10x memory/latency overhead.
-        for (let key in state) {
-            if (!Object.prototype.hasOwnProperty.call(state, key)) continue;
-            let v = state[key];
-            if (v === null || v === undefined || typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
-                values[key] = v;
-            }
-        }
+        let values = JSON.parse(JSON.stringify(state || {}));
 
         // Always include actual form input values (light:model bindings)
         scope.querySelectorAll('[data-light-model]').forEach((el) => {
-            values[el.dataset.lightModel] = el.value ?? '';
+            setValueByPath(values, el.dataset.lightModel, getElementValue(el));
         });
         return values;
     }
@@ -752,7 +881,7 @@
             return out;
         }
 
-        raw.split(',').map((part) => part.trim()).filter(Boolean).forEach((part) => {
+        splitTopLevelArgs(raw).map((part) => part.trim()).filter(Boolean).forEach((part) => {
             let index = part.indexOf('=');
 
             if (index === -1) {
@@ -767,6 +896,448 @@
         });
 
         return out;
+    }
+
+    function splitTopLevelArgs(rawArgs) {
+        if (!rawArgs || typeof rawArgs !== 'string') {
+            return [];
+        }
+
+        let args = [];
+        let current = '';
+        let depth = 0;
+        let quote = null;
+
+        for (let i = 0; i < rawArgs.length; i++) {
+            let ch = rawArgs[i];
+
+            if (quote) {
+                current += ch;
+                if (ch === quote && rawArgs[i - 1] !== '\\') {
+                    quote = null;
+                }
+                continue;
+            }
+
+            if (ch === '"' || ch === "'") {
+                quote = ch;
+                current += ch;
+                continue;
+            }
+
+            if (ch === '(' || ch === '[' || ch === '{') {
+                depth++;
+                current += ch;
+                continue;
+            }
+
+            if (ch === ')' || ch === ']' || ch === '}') {
+                depth = Math.max(0, depth - 1);
+                current += ch;
+                continue;
+            }
+
+            if (ch === ',' && depth === 0) {
+                if (current.trim() !== '') {
+                    args.push(current.trim());
+                }
+                current = '';
+                continue;
+            }
+
+            current += ch;
+        }
+
+        if (current.trim() !== '') {
+            args.push(current.trim());
+        }
+
+        return args;
+    }
+
+    function stripWrappingQuotes(value) {
+        if (value == null) return '';
+
+        let raw = String(value).trim();
+        if (!raw) return '';
+
+        let first = raw[0];
+        let last = raw[raw.length - 1];
+        if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+            return raw.slice(1, -1);
+        }
+
+        return raw;
+    }
+
+    function normalizeSelectableValue(value) {
+        if (typeof value === 'string') {
+            let trimmed = value.trim();
+            if (/^-?\d+(?:\.\d+)?$/.test(trimmed)) {
+                let asNumber = Number(trimmed);
+                if (!Number.isNaN(asNumber)) {
+                    return asNumber;
+                }
+            }
+            return trimmed;
+        }
+
+        return value;
+    }
+
+    function isSameArrayValue(a, b) {
+        let left = normalizeSelectableValue(a);
+        let right = normalizeSelectableValue(b);
+
+        if (left === right) {
+            return true;
+        }
+
+        if (typeof left === 'object' || typeof right === 'object') {
+            try {
+                return JSON.stringify(left) === JSON.stringify(right);
+            } catch (_) {
+                return false;
+            }
+        }
+
+        return String(left) === String(right);
+    }
+
+    function ensureArrayState(arrayKey, api = null) {
+        let safeKey = stripWrappingQuotes(arrayKey);
+        if (!safeKey) return [];
+
+        let targetApi = api || getJsApi();
+        let existing = getValueByPath(targetApi.state, safeKey, undefined);
+
+        if (Array.isArray(existing)) {
+            return existing;
+        }
+
+        setValueByPath(targetApi.state, safeKey, []);
+        return getValueByPath(targetApi.state, safeKey, []);
+    }
+
+    function parseArrayDirectiveArgs(rawExpr) {
+        let parts = splitTopLevelArgs(rawExpr || '');
+        let arrayKey = stripWrappingQuotes(parts[0] || '');
+        let valueExpr = parts[1] || '';
+        let sourceExpr = parts[1] || '';
+        let selectorExpr = parts[2] || 'id';
+
+        return {
+            arrayKey,
+            valueExpr,
+            sourceExpr,
+            selectorExpr,
+            parts,
+        };
+    }
+
+    function arrayContainsValue(arrayKey, value, api = null) {
+        let targetApi = api || getJsApi();
+        let list = ensureArrayState(arrayKey, targetApi);
+        return list.some((entry) => isSameArrayValue(entry, value));
+    }
+
+    function toggleArrayValue(arrayKey, value, api = null) {
+        let targetApi = api || getJsApi();
+        let list = ensureArrayState(arrayKey, targetApi);
+
+        if (arrayContainsValue(arrayKey, value, targetApi)) {
+            let next = list.filter((entry) => !isSameArrayValue(entry, value));
+            setValueByPath(targetApi.state, arrayKey, next);
+            return next;
+        }
+
+        let next = [...list, normalizeSelectableValue(value)];
+        setValueByPath(targetApi.state, arrayKey, next);
+        return next;
+    }
+
+    function setArrayValues(arrayKey, values, api = null) {
+        let targetApi = api || getJsApi();
+        let sanitized = Array.isArray(values) ? values.map((v) => normalizeSelectableValue(v)) : [];
+        setValueByPath(targetApi.state, arrayKey, sanitized);
+        return sanitized;
+    }
+
+    function cloneJsonValue(value) {
+        try {
+            return JSON.parse(JSON.stringify(value));
+        } catch (_) {
+            return value;
+        }
+    }
+
+    function appendJsonValue(path, value, api = null) {
+        let targetApi = api || getJsApi();
+        let key = stripWrappingQuotes(path || '');
+        if (!key) return [];
+
+        let list = getValueByPath(targetApi.state, key, []);
+        if (!Array.isArray(list)) {
+            list = [];
+        }
+
+        let next = [...list, cloneJsonValue(value)];
+        setValueByPath(targetApi.state, key, next);
+        return next;
+    }
+
+    function parseJsonDirectiveArgs(rawExpr) {
+        let parts = splitTopLevelArgs(rawExpr || '');
+        return {
+            pathExpr: parts[0] || '',
+            arg1Expr: parts[1] || '',
+            arg2Expr: parts[2] || '',
+            arg3Expr: parts[3] || '',
+            arg4Expr: parts[4] || '',
+            parts,
+        };
+    }
+
+    function resolveJsonPath(pathExpr, scopeState = null) {
+        let api = getJsApi();
+        let raw = String(pathExpr || '').trim();
+        if (!raw) return '';
+
+        let first = raw[0];
+        let last = raw[raw.length - 1];
+        if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+            return stripWrappingQuotes(raw);
+        }
+
+        let evaluated = evaluateLightExpression(raw, scopeState || api.state);
+        if (typeof evaluated === 'string' && evaluated.trim() !== '') {
+            return evaluated.trim();
+        }
+
+        return raw;
+    }
+
+    function resolveJsonOutput(outputExpr, scopeState = null) {
+        if (!outputExpr) return '';
+
+        let raw = String(outputExpr).trim();
+        if (!raw) return '';
+
+        let first = raw[0];
+        let last = raw[raw.length - 1];
+        if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+            return stripWrappingQuotes(raw);
+        }
+
+        let evaluated = evaluateLightExpression(raw, scopeState || getJsApi().state);
+        if (evaluated === undefined || evaluated === null) {
+            return raw;
+        }
+
+        return evaluated;
+    }
+
+    function removeJsonPath(path, api = null) {
+        let targetApi = api || getJsApi();
+        let key = stripWrappingQuotes(path || '');
+        if (!key) return false;
+
+        let tokens = tokenizePath(key);
+        if (!tokens.length) return false;
+
+        let parentTokens = tokens.slice(0, -1);
+        let lastToken = tokens[tokens.length - 1];
+        let parent = parentTokens.length ? getValueByPath(targetApi.state, parentTokens.join('.')) : targetApi.state;
+
+        if (parent == null || typeof parent !== 'object') {
+            return false;
+        }
+
+        if (Array.isArray(parent) && /^\d+$/.test(lastToken)) {
+            let idx = Number(lastToken);
+            if (idx >= 0 && idx < parent.length) {
+                parent.splice(idx, 1);
+                return true;
+            }
+            return false;
+        }
+
+        if (Object.prototype.hasOwnProperty.call(parent, lastToken)) {
+            delete parent[lastToken];
+            return true;
+        }
+
+        return false;
+    }
+
+    function removeJsonValue(path, target, mode = 'auto', api = null) {
+        let targetApi = api || getJsApi();
+        let key = stripWrappingQuotes(path || '');
+        if (!key) return [];
+
+        let list = getValueByPath(targetApi.state, key, []);
+        if (!Array.isArray(list)) {
+            return list;
+        }
+
+        let resolvedMode = mode || 'auto';
+        if (resolvedMode === 'auto') {
+            resolvedMode = Number.isInteger(Number(target)) ? 'index' : 'value';
+        }
+
+        let next = list;
+        if (resolvedMode === 'index') {
+            let idx = Number(target);
+            if (!Number.isNaN(idx) && idx >= 0 && idx < list.length) {
+                next = list.filter((_, i) => i !== idx);
+            }
+        } else {
+            next = list.filter((entry) => !isSameArrayValue(entry, target));
+        }
+
+        setValueByPath(targetApi.state, key, next);
+        return next;
+    }
+
+    function applyJsonCheckBinding(el, rawExpr, scopeState = null) {
+        if (!el || !rawExpr) return;
+
+        let api = getJsApi();
+        let parsed = parseJsonDirectiveArgs(rawExpr);
+        let path = resolveJsonPath(parsed.pathExpr, scopeState || api.state);
+        if (!path) return;
+
+        let exists = hasValueAtPath(api.state, path);
+        let value = exists ? getValueByPath(api.state, path) : undefined;
+
+        if (el.type === 'checkbox' || el.type === 'radio') {
+            el.checked = !!exists;
+        }
+
+        if (parsed.arg1Expr || parsed.arg2Expr) {
+            let out = exists
+                ? resolveJsonOutput(parsed.arg1Expr, scopeState || api.state)
+                : resolveJsonOutput(parsed.arg2Expr, scopeState || api.state);
+
+            if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') {
+                el.value = out == null ? '' : String(out);
+            } else {
+                el.innerText = out == null ? '' : String(out);
+            }
+        } else if (el.hasAttribute('data-light-json-value')) {
+            let out = exists ? value : '';
+            el.innerText = out == null ? '' : String(out);
+        }
+
+        if (parsed.arg3Expr || parsed.arg4Expr) {
+            let trueClasses = stripWrappingQuotes(parsed.arg3Expr || '');
+            let falseClasses = stripWrappingQuotes(parsed.arg4Expr || '');
+
+            trueClasses.split(/\s+/).filter(Boolean).forEach((className) => {
+                if (exists) {
+                    el.classList.add(className);
+                } else {
+                    el.classList.remove(className);
+                }
+            });
+
+            falseClasses.split(/\s+/).filter(Boolean).forEach((className) => {
+                if (exists) {
+                    el.classList.remove(className);
+                } else {
+                    el.classList.add(className);
+                }
+            });
+        }
+
+        el.setAttribute('data-light-json-exists', exists ? '1' : '0');
+    }
+
+    function extractListItemValue(item, selectorExpr, state, index) {
+        let selector = stripWrappingQuotes(selectorExpr || 'id');
+        if (!selector) return item;
+
+        if (/^[A-Za-z_$][\w$]*$/.test(selector)) {
+            return getValueByPath(item, selector, item?.[selector]);
+        }
+
+        return evaluateLightExpression(selectorExpr, state, {
+            item,
+            index,
+            $index: index,
+        });
+    }
+
+    function ensureDeclaredArrayStates(scope = document) {
+        let api = getJsApi();
+
+        scope.querySelectorAll('[data-light-array]').forEach((el) => {
+            let raw = el.getAttribute('data-light-array') || '';
+            splitTopLevelArgs(raw).forEach((name) => {
+                let key = stripWrappingQuotes(name);
+                if (!key) return;
+                ensureArrayState(key, api);
+            });
+        });
+    }
+
+    function applyArrayCheckBinding(el, rawExpr, scopeState = null) {
+        if (!el || !rawExpr) return;
+
+        let api = getJsApi();
+        let parsed = parseArrayDirectiveArgs(rawExpr);
+        if (!parsed.arrayKey || !parsed.valueExpr) return;
+
+        let checkValue = evaluateLightExpression(parsed.valueExpr, scopeState || api.state);
+        let checked = arrayContainsValue(parsed.arrayKey, checkValue, api);
+
+        if (el.type === 'checkbox' || el.type === 'radio') {
+            el.checked = !!checked;
+        }
+
+        if (parsed.parts.length >= 3) {
+            let trueClasses = stripWrappingQuotes(parsed.parts[2] || '');
+            let falseClasses = stripWrappingQuotes(parsed.parts[3] || '');
+
+            trueClasses.split(/\s+/).filter(Boolean).forEach((className) => {
+                if (checked) {
+                    el.classList.add(className);
+                } else {
+                    el.classList.remove(className);
+                }
+            });
+
+            falseClasses.split(/\s+/).filter(Boolean).forEach((className) => {
+                if (checked) {
+                    el.classList.remove(className);
+                } else {
+                    el.classList.add(className);
+                }
+            });
+        }
+
+        el.setAttribute('data-light-array-checked', checked ? '1' : '0');
+    }
+
+    function applyArrayAllDirective(rawExpr, scopeState = null) {
+        let api = getJsApi();
+        let parsed = parseArrayDirectiveArgs(rawExpr);
+        if (!parsed.arrayKey || !parsed.sourceExpr) return;
+
+        let source = evaluateLightExpression(parsed.sourceExpr, scopeState || api.state);
+
+        if (source && typeof source === 'object' && !Array.isArray(source) && Array.isArray(source.data)) {
+            source = source.data;
+        } else if (source && typeof source === 'object' && !Array.isArray(source)) {
+            source = Object.values(source);
+        }
+
+        if (!Array.isArray(source)) {
+            source = [];
+        }
+
+        let values = source.map((item, index) => extractListItemValue(item, parsed.selectorExpr, api.state, index));
+        setArrayValues(parsed.arrayKey, values, api);
     }
 
     /**
@@ -795,14 +1366,36 @@
             syncLightConditionals();
             renderLightForTemplates();
             syncLightPaginate();
+            syncAllCheckboxBindings();
         }
+    }
+
+    // Sync ALL checkboxes (including scoped) after state changes
+    function syncAllCheckboxBindings() {
+        let api = getJsApi();
+        document.querySelectorAll('[data-light-bind-checked]').forEach((el) => {
+            let expr = el.getAttribute('data-light-bind-checked');
+            if (!expr) return;
+            try {
+                let checked = !!evaluateLightExpression(expr, api.state);
+                if (el.checked !== checked) {
+                    el.checked = checked;
+                }
+            } catch (e) {
+                // silently fail for complex expressions in scoped context
+            }
+        });
     }
 
     let __pendingSyncFrame = null;
     let __pendingSyncKeys = new Set();
+    let __needsFullSync = false;
 
     function queueSyncBindings(key = null) {
-        if (key) {
+        if (!key) {
+            // If no key specified, always do full sync (for loops, conditionals, etc.)
+            __needsFullSync = true;
+        } else {
             __pendingSyncKeys.add(key);
         }
 
@@ -815,13 +1408,25 @@
 
             let keys = Array.from(__pendingSyncKeys);
             __pendingSyncKeys.clear();
+            let fullSync = __needsFullSync;
+            __needsFullSync = false;
 
-            if (!keys.length) {
-                syncBindings();
+            if (!keys.length || fullSync) {
+                syncBindings(null, true);  // Always full sync
                 return;
             }
 
-            keys.forEach((stateKey) => syncBindings(stateKey, false));
+            // Partial sync for specific keys, but always mark for full if it looks like array/object changes
+            let needsFull = keys.some(k => {
+                let val = getJsApi().state[k];
+                return Array.isArray(val) || (val && typeof val === 'object' && !(val instanceof Date));
+            });
+
+            if (needsFull) {
+                syncBindings(null, true);
+            } else {
+                keys.forEach((stateKey) => syncBindings(stateKey, false));
+            }
         });
     }
 
@@ -894,59 +1499,6 @@
             return list;
         }
 
-        function splitCallArgs(rawArgs) {
-            let args = [];
-            let current = '';
-            let depth = 0;
-            let quote = null;
-
-            for (let i = 0; i < rawArgs.length; i++) {
-                let ch = rawArgs[i];
-
-                if (quote) {
-                    current += ch;
-                    if (ch === quote && rawArgs[i - 1] !== '\\') {
-                        quote = null;
-                    }
-                    continue;
-                }
-
-                if (ch === '"' || ch === "'") {
-                    quote = ch;
-                    current += ch;
-                    continue;
-                }
-
-                if (ch === '(' || ch === '[' || ch === '{') {
-                    depth++;
-                    current += ch;
-                    continue;
-                }
-
-                if (ch === ')' || ch === ']' || ch === '}') {
-                    depth = Math.max(0, depth - 1);
-                    current += ch;
-                    continue;
-                }
-
-                if (ch === ',' && depth === 0) {
-                    if (current.trim() !== '') {
-                        args.push(current.trim());
-                    }
-                    current = '';
-                    continue;
-                }
-
-                current += ch;
-            }
-
-            if (current.trim() !== '') {
-                args.push(current.trim());
-            }
-
-            return args;
-        }
-
         function resolveScopedAction(rawCall) {
             if (!rawCall) return rawCall;
 
@@ -962,7 +1514,7 @@
                 return action;
             }
 
-            let args = splitCallArgs(rawArgs).map((argExpr) => evaluateLightExpression(normalizeLightExpression(argExpr), scopeState));
+            let args = splitTopLevelArgs(rawArgs).map((argExpr) => evaluateLightExpression(normalizeLightExpression(argExpr), scopeState));
             let serialized = args.map((value) => JSON.stringify(value)).join(',');
 
             return `${action}(${serialized})`;
@@ -979,7 +1531,7 @@
                 expr = expr.slice(open + 1, close).trim();
             }
 
-            let parts = splitCallArgs(expr);
+            let parts = splitTopLevelArgs(expr);
 
             let resolved = parts.map((part) => {
                 let eq = part.indexOf('=');
@@ -995,6 +1547,74 @@
             });
 
             return resolved.join(',');
+        }
+
+        function resolveScopedModelPath(rawPath) {
+            if (!rawPath) return rawPath;
+
+            let path = String(rawPath).trim();
+            let index = Number(scopeState.$index ?? scopeState.index ?? 0);
+            let itemName = scopeState.__lv_for_itemName;
+            let sourceExpr = scopeState.__lv_for_sourceExpr;
+
+            path = path.replace(/\$index/g, String(index));
+
+            if (itemName && sourceExpr) {
+                if (path === itemName) {
+                    path = `${sourceExpr}[${index}]`;
+                } else if (path.startsWith(itemName + '.')) {
+                    let suffix = path.slice(itemName.length + 1);
+                    path = `${sourceExpr}[${index}].${suffix}`;
+                }
+            }
+
+            return path;
+        }
+
+        function resolveScopedErrorPath(rawPath) {
+            if (!rawPath) return rawPath;
+
+            let path = String(rawPath).trim();
+            let index = Number(scopeState.$index ?? scopeState.index ?? 0);
+            let itemName = scopeState.__lv_for_itemName;
+            let sourceExpr = scopeState.__lv_for_sourceExpr;
+
+            path = path.replace(/\$index/g, String(index));
+
+            if (itemName && sourceExpr) {
+                if (path === itemName) {
+                    path = `${sourceExpr}.${index}`;
+                } else if (path.startsWith(itemName + '.')) {
+                    let suffix = path.slice(itemName.length + 1);
+                    path = `${sourceExpr}.${index}.${suffix}`;
+                }
+            }
+
+            return path;
+        }
+
+        function resolveScopedForExpression(rawExpr) {
+            if (!rawExpr) return rawExpr;
+
+            let expr = String(rawExpr).trim();
+            let match = expr.match(/^\s*([A-Za-z_$][\w$]*)\s+in\s+(.+)\s*$/);
+            if (!match) return rawExpr;
+
+            let itemVar = match[1];
+            let sourceExpr = match[2];
+            let resolved = evaluateLightExpression(normalizeLightExpression(sourceExpr), scopeState);
+
+            if (resolved && typeof resolved === 'object' && !Array.isArray(resolved) && Array.isArray(resolved.data)) {
+                resolved = resolved.data;
+            } else if (resolved && typeof resolved === 'object' && !Array.isArray(resolved)) {
+                resolved = Object.values(resolved);
+            }
+
+            if (!Array.isArray(resolved)) {
+                resolved = [];
+            }
+
+            return `${itemVar} in ${JSON.stringify(resolved)}`;
         }
 
         scopedElements('[data-light-text]').forEach((el) => {
@@ -1061,6 +1681,149 @@
 
             el.setAttribute('data-light-function', resolveScopedFunction(expr));
         });
+
+        scopedElements('[data-light-array-add]').forEach((el) => {
+            let expr = el.getAttribute('data-light-array-add');
+            if (!expr) return;
+
+            let parts = splitTopLevelArgs(expr);
+            if (!parts.length) return;
+
+            let arrayKey = stripWrappingQuotes(parts[0]);
+            let valueExpr = parts[1] || '';
+            if (!arrayKey || !valueExpr) return;
+
+            let value = evaluateLightExpression(normalizeLightExpression(valueExpr), scopeState);
+            el.setAttribute('data-light-array-add', `${arrayKey},${JSON.stringify(value)}`);
+        });
+
+        scopedElements('[data-light-array-all]').forEach((el) => {
+            let expr = el.getAttribute('data-light-array-all');
+            if (!expr) return;
+
+            let parts = splitTopLevelArgs(expr);
+            if (!parts.length) return;
+
+            let arrayKey = stripWrappingQuotes(parts[0]);
+            let sourceExpr = parts[1] || '';
+            let selectorExpr = parts[2] || 'id';
+            if (!arrayKey || !sourceExpr) return;
+
+            let sourceValue = evaluateLightExpression(normalizeLightExpression(sourceExpr), scopeState);
+            let serializedSource = JSON.stringify(sourceValue);
+            let resolved = `${arrayKey},${serializedSource}`;
+
+            if (selectorExpr) {
+                resolved += `,${selectorExpr}`;
+            }
+
+            el.setAttribute('data-light-array-all', resolved);
+        });
+
+        scopedElements('[data-light-json-add]').forEach((el) => {
+            let expr = el.getAttribute('data-light-json-add');
+            if (!expr) return;
+
+            let parts = splitTopLevelArgs(expr);
+            if (!parts.length) return;
+
+            let path = stripWrappingQuotes(parts[0]);
+            let valueExpr = parts[1] || '';
+            if (!path || !valueExpr) return;
+
+            let value = evaluateLightExpression(normalizeLightExpression(valueExpr), scopeState);
+            el.setAttribute('data-light-json-add', `${path},${JSON.stringify(value)}`);
+        });
+
+        scopedElements('[data-light-json-remove]').forEach((el) => {
+            let expr = el.getAttribute('data-light-json-remove');
+            if (!expr) return;
+
+            let parsed = parseJsonDirectiveArgs(expr);
+            let path = resolveJsonPath(parsed.pathExpr, scopeState);
+            let target = parsed.arg1Expr
+                ? evaluateLightExpression(normalizeLightExpression(parsed.arg1Expr), scopeState)
+                : null;
+            let mode = parsed.arg2Expr ? stripWrappingQuotes(parsed.arg2Expr) : 'auto';
+
+            let encodedTarget = target === undefined ? 'null' : JSON.stringify(target);
+            el.setAttribute('data-light-json-remove', `${path},${encodedTarget},${mode}`);
+        });
+
+        scopedElements('[data-light-json-check]').forEach((el) => {
+            el.setAttribute('data-light-scoped', '1');
+            let expr = el.getAttribute('data-light-json-check');
+            if (!expr) return;
+
+            let parsed = parseJsonDirectiveArgs(expr);
+            let path = resolveJsonPath(parsed.pathExpr, scopeState);
+            let rebuilt = [path]
+                .concat(parsed.parts.slice(1))
+                .filter((part) => part !== undefined && part !== null && String(part).trim() !== '')
+                .join(',');
+
+            el.setAttribute('data-light-json-check', rebuilt);
+            applyJsonCheckBinding(el, rebuilt, scopeState);
+        });
+
+        scopedElements('[data-light-for]').forEach((el) => {
+            let loopExpr = el.getAttribute('data-light-for');
+            if (!loopExpr) return;
+
+            el.setAttribute('data-light-for', resolveScopedForExpression(loopExpr));
+        });
+
+        scopedElements('[data-light-model]').forEach((el) => {
+            let model = el.getAttribute('data-light-model');
+            if (!model) return;
+
+            let currentValue = evaluateLightExpression(model, scopeState);
+            if (el.type === 'checkbox') {
+                el.checked = String(currentValue ?? '') === String(el.value || '1');
+            } else if (el.type === 'radio') {
+                el.checked = String(currentValue ?? '') === String(el.value || '1');
+            } else if (el.tagName === 'SELECT' && el.multiple && Array.isArray(currentValue)) {
+                Array.from(el.options).forEach((option) => {
+                    option.selected = currentValue.includes(option.value);
+                });
+            } else if ((el.value ?? '') !== String(currentValue ?? '')) {
+                el.value = currentValue ?? '';
+            }
+
+            el.setAttribute('data-light-model', resolveScopedModelPath(model));
+        });
+
+        scopedElements('[data-light-js-model]').forEach((el) => {
+            let model = el.getAttribute('data-light-js-model');
+            if (!model) return;
+
+            el.setAttribute('data-light-js-model', resolveScopedModelPath(model));
+        });
+
+        scopedElements('[data-light-error]').forEach((el) => {
+            let field = el.getAttribute('data-light-error');
+            if (!field) return;
+
+            el.setAttribute('data-light-error', resolveScopedErrorPath(field));
+        });
+
+        scopedElements('[data-light-bind-checked]').forEach((el) => {
+            el.setAttribute('data-light-scoped', '1');
+            let expr = el.getAttribute('data-light-bind-checked');
+            if (!expr) return;
+
+            let checked = !!evaluateLightExpression(expr, scopeState);
+            if (el.checked !== checked) {
+                el.checked = checked;
+            }
+        });
+
+        scopedElements('[data-light-array-check]').forEach((el) => {
+            el.setAttribute('data-light-scoped', '1');
+            let expr = el.getAttribute('data-light-array-check');
+            if (!expr) return;
+            applyArrayCheckBinding(el, expr, scopeState);
+        });
     }
 
     /**
@@ -1107,12 +1870,8 @@
                 list = [];
             }
 
-            // Performance: skip full re-render if array reference + length unchanged.
-            // This is critical for 5000+ items — light:function (client-side) state
-            // changes that don't touch this array won't trigger expensive DOM rebuilds.
-            if (node._lightForLastRef === list && node._lightForLastLen === list.length) {
-                return; // Array unchanged, skip
-            }
+            // Always re-render loop nodes so scoped class/check bindings react
+            // to external state changes (like selection arrays for row highlight).
             node._lightForLastRef = list;
             node._lightForLastLen = list.length;
 
@@ -1145,6 +1904,8 @@
                     [itemName]: item,
                     index,
                     $index: index,
+                    __lv_for_itemName: itemName,
+                    __lv_for_sourceExpr: sourceExpr,
                 });
 
                 if (isTemplate) {
@@ -2354,6 +3115,85 @@
         invokeCustomFunction(parsed.action, resolvedArgs, { event: e, el });
     });
 
+    document.addEventListener('click', (e) => {
+        let el = e.target.closest('[data-light-array-add]');
+        if (!el) return;
+
+        if (el.tagName === 'BUTTON' || el.tagName === 'A') {
+            e.preventDefault();
+        }
+
+        let api = getJsApi();
+        let parsed = parseArrayDirectiveArgs(el.dataset.lightArrayAdd || '');
+        if (!parsed.arrayKey || !parsed.valueExpr) return;
+
+        let value = evaluateLightExpression(parsed.valueExpr, api.state);
+        toggleArrayValue(parsed.arrayKey, value, api);
+        queueSyncBindings(parsed.arrayKey);
+    });
+
+    document.addEventListener('click', (e) => {
+        let el = e.target.closest('[data-light-array-all]');
+        if (!el) return;
+
+        if (el.tagName === 'BUTTON' || el.tagName === 'A') {
+            e.preventDefault();
+        }
+
+        applyArrayAllDirective(el.dataset.lightArrayAll || '');
+
+        let parsed = parseArrayDirectiveArgs(el.dataset.lightArrayAll || '');
+        if (parsed.arrayKey) {
+            queueSyncBindings(parsed.arrayKey);
+        } else {
+            queueSyncBindings();
+        }
+    });
+
+    document.addEventListener('click', (e) => {
+        let el = e.target.closest('[data-light-json-add]');
+        if (!el) return;
+
+        if (el.tagName === 'BUTTON' || el.tagName === 'A') {
+            e.preventDefault();
+        }
+
+        let api = getJsApi();
+        let parts = splitTopLevelArgs(el.dataset.lightJsonAdd || '');
+        let path = stripWrappingQuotes(parts[0] || '');
+        let valueExpr = parts[1] || '';
+        if (!path || !valueExpr) return;
+
+        let value = evaluateLightExpression(valueExpr, api.state);
+        appendJsonValue(path, value, api);
+        queueSyncBindings(path);
+    });
+
+    document.addEventListener('click', (e) => {
+        let el = e.target.closest('[data-light-json-remove]');
+        if (!el) return;
+
+        if (el.tagName === 'BUTTON' || el.tagName === 'A') {
+            e.preventDefault();
+        }
+
+        let api = getJsApi();
+        let parsed = parseJsonDirectiveArgs(el.dataset.lightJsonRemove || '');
+        let path = resolveJsonPath(parsed.pathExpr, api.state);
+        if (!path) return;
+
+        if (!parsed.arg1Expr) {
+            removeJsonPath(path, api);
+            queueSyncBindings(path);
+            return;
+        }
+
+        let target = evaluateLightExpression(parsed.arg1Expr, api.state);
+        let mode = parsed.arg2Expr ? stripWrappingQuotes(parsed.arg2Expr) : 'auto';
+        removeJsonValue(path, target, mode, api);
+        queueSyncBindings(path);
+    });
+
     // --- light:navigate → SPA-style navigation without full page reload ---
     document.addEventListener('click', (e) => {
         let link = e.target.closest('a[data-light-navigate]');
@@ -2424,13 +3264,32 @@
     // --- light:model input → two-way data binding ---
     // Updates state immediately on keystroke and optionally triggers live model action
     document.addEventListener('input', (e) => {
+        let actionEl = e.target.closest('[data-light-input]');
+        if (actionEl) {
+            let parsed = parse(actionEl.dataset.lightInput);
+            let state = collect();
+            let debounceMs = getElementDebounceMs(actionEl);
+
+            if (parsed.args.length) {
+                call(parsed.action, parsed.args, {
+                    debounceMs,
+                    debounceKey: `input:${parsed.action}`,
+                });
+            } else {
+                call(parsed.action, state, {
+                    debounceMs,
+                    debounceKey: `input:${parsed.action}`,
+                });
+            }
+        }
+
         let modelEl = e.target.closest('[data-light-model]');
         if (modelEl) {
             let field = getFieldName(modelEl);
             if (!field) return;
 
             let api = getJsApi();
-            api.state[field] = getElementValue(modelEl);
+            setValueByPath(api.state, field, getElementValue(modelEl));
             queueSyncBindings(field);
 
             // Real-time field validation as user types
@@ -2453,7 +3312,7 @@
         if (!field) return;
 
         let api = getJsApi();
-        api.state[field] = getElementValue(el);
+        setValueByPath(api.state, field, getElementValue(el));
         queueSyncBindings(field);
 
         let result = validateElement(el, getRootRules());
@@ -2464,13 +3323,32 @@
 
     // --- change event — for selects, checkboxes, radios ---
     document.addEventListener('change', (e) => {
+        let actionEl = e.target.closest('[data-light-change]');
+        if (actionEl) {
+            let parsed = parse(actionEl.dataset.lightChange);
+            let state = collect();
+            let debounceMs = getElementDebounceMs(actionEl);
+
+            if (parsed.args.length) {
+                call(parsed.action, parsed.args, {
+                    debounceMs,
+                    debounceKey: `change:${parsed.action}`,
+                });
+            } else {
+                call(parsed.action, state, {
+                    debounceMs,
+                    debounceKey: `change:${parsed.action}`,
+                });
+            }
+        }
+
         let modelEl = e.target.closest('[data-light-model]');
         if (modelEl) {
             let field = getFieldName(modelEl);
             if (!field) return;
 
             let api = getJsApi();
-            api.state[field] = getElementValue(modelEl);
+            setValueByPath(api.state, field, getElementValue(modelEl));
             queueSyncBindings(field);
 
             let result = validateElement(modelEl, getRootRules());
@@ -2490,7 +3368,7 @@
         if (!field) return;
 
         let api = getJsApi();
-        api.state[field] = getElementValue(el);
+        setValueByPath(api.state, field, getElementValue(el));
         queueSyncBindings(field);
 
         let result = validateElement(el, getRootRules());

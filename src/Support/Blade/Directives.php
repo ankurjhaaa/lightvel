@@ -26,6 +26,13 @@ use Lightvel\Support\Assets;
  *   light:state="..."        → data-light-state="..."        → initJsState() initial state setup
  *   light:const="..."        → data-light-const="..."        → initJsState() read-only constants
  *   light:function="..."     → data-light-function="..."     → invokeCustomFunction() or inline assignments
+ *   light:array="name"       → data-light-array="name"       → ensure reactive array state exists
+ *   light:array.add="..."    → data-light-array-add="..."    → toggle/push value in named array
+ *   light:array.check="..."  → data-light-array-check="..."  → bind checked state from named array
+ *   light:array.all="..."    → data-light-array-all="..."    → fill named array from list source
+ *   light:json.add="..."     → data-light-json-add="..."     → append JSON object/value into array path
+ *   light:json.remove="..."  → data-light-json-remove="..."  → remove item/index from JSON array path
+ *   light:json.check="..."   → data-light-json-check="..."   → check dot-path exists and print/apply state
  *   light:bind="key"         → data-light-bind="key"         → syncJsBindings() text binding
  *   light:rules="..."        → data-light-rules="..."        → validateElement() client-side validation
  *   light:debounce="300"     → data-light-debounce="300"     → getElementDebounceMs() delay
@@ -70,8 +77,17 @@ class Directives
             $view = preg_replace_callback('/light:submit="([^"]+)"/', function ($match) use ($normalizeLightExpr) {
                 return 'data-light-submit="' . $normalizeLightExpr($match[1]) . '"';
             }, $view);
+            // light:change calls a server-side action on change event
+            $view = preg_replace_callback('/light:change="([^"]+)"/', function ($match) use ($normalizeLightExpr) {
+                return 'data-light-change="' . $normalizeLightExpr($match[1]) . '"';
+            }, $view);
+            // light:input calls a server-side action on input event
+            $view = preg_replace_callback('/light:input="([^"]+)"/', function ($match) use ($normalizeLightExpr) {
+                return 'data-light-input="' . $normalizeLightExpr($match[1]) . '"';
+            }, $view);
 
             // --- Text/HTML output binding ---
+            $view = preg_replace('/light:bind:checked="([^"]+)"/', 'data-light-bind-checked="$1"', $view);
             $view = preg_replace('/light:bind="([^"]+)"/', 'data-light-bind="$1"', $view);
             $view = preg_replace_callback('/light:text="([^"]+)"/', function ($match) use ($normalizeLightExpr) {
                 return 'data-light-text="' . $normalizeLightExpr($match[1]) . '"';
@@ -91,6 +107,34 @@ class Directives
             // e.g. light:function="showModal=true, name=''" → instant UI update
             $view = preg_replace_callback('/light:function="([^"]+)"/', function ($match) use ($normalizeLightExpr) {
                 return 'data-light-function="' . $normalizeLightExpr($match[1]) . '"';
+            }, $view);
+
+            // --- Array utility directives ---
+            // light:array="students" initializes array state key if missing
+            $view = preg_replace('/light:array="([^"]+)"/', 'data-light-array="$1"', $view);
+            // light:array.add="students, student.id" toggles value in the array
+            $view = preg_replace_callback('/light:array\.add="([^"]+)"/', function ($match) use ($normalizeLightExpr) {
+                return 'data-light-array-add="' . $normalizeLightExpr($match[1]) . '"';
+            }, $view);
+            // light:array.check="students, student.id" keeps checkbox checked in sync
+            $view = preg_replace_callback('/light:array\.check="([^"]+)"/', function ($match) use ($normalizeLightExpr) {
+                return 'data-light-array-check="' . $normalizeLightExpr($match[1]) . '"';
+            }, $view);
+            // light:array.all="students, users, id" sets full selected array from source
+            $view = preg_replace_callback('/light:array\.all="([^"]+)"/', function ($match) use ($normalizeLightExpr) {
+                return 'data-light-array-all="' . $normalizeLightExpr($match[1]) . '"';
+            }, $view);
+            // light:json.add="subjects_json, {name:'', max_marks:100}" appends object/value to JSON array path
+            $view = preg_replace_callback('/light:json\.add="([^"]+)"/', function ($match) use ($normalizeLightExpr) {
+                return 'data-light-json-add="' . $normalizeLightExpr($match[1]) . '"';
+            }, $view);
+            // light:json.remove="subjects_json, $index" removes entry from JSON array path
+            $view = preg_replace_callback('/light:json\.remove="([^"]+)"/', function ($match) use ($normalizeLightExpr) {
+                return 'data-light-json-remove="' . $normalizeLightExpr($match[1]) . '"';
+            }, $view);
+            // light:json.check="a.b.c, 'YES', 'NO'" checks dot-path presence and prints result
+            $view = preg_replace_callback('/light:json\.check="([^"]+)"/', function ($match) use ($normalizeLightExpr) {
+                return 'data-light-json-check="' . $normalizeLightExpr($match[1]) . '"';
             }, $view);
 
             // --- Conditional rendering ---

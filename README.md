@@ -464,6 +464,57 @@ Shows a progress bar at the top during navigation. Supports browser back/forward
 
 ### State Management
 
+### Custom Array & JSON Directives (v1.3.49+)
+
+Lightvel now includes utility directives for fast selection logic and dynamic JSON form arrays.
+
+#### Array utilities
+
+```blade
+<div light:array="selected_ids">
+    <button light:array.all="selected_ids, users, id">Select All</button>
+
+    <tr light:for="user in users"
+        light:array.check="selected_ids, Number(user.id), 'bg-teal-50', 'bg-white'">
+        <td>
+            <input type="checkbox"
+                   light:array.check="selected_ids, Number(user.id)"
+                   light:array.add="selected_ids, Number(user.id)" />
+        </td>
+    </tr>
+</div>
+```
+
+- `light:array="key"` → ensures array exists in state
+- `light:array.add="array, value"` → toggle membership
+- `light:array.check="array, value"` → membership check
+- `light:array.check="array, value, 'trueClass', 'falseClass'"` → membership + class toggle
+- `light:array.all="array, list, idKey"` → bulk select from source list
+
+#### JSON utilities
+
+```blade
+<button light:json.add="subjects_json, {name:'', max_marks:100}">+ Add Node</button>
+
+<div light:for="subject in subjects_json">
+    <input light:model="subject.name" />
+    <input type="number" light:model="subject.max_marks" />
+    <button light:json.remove="subjects_json, $index, 'index'">Remove</button>
+</div>
+
+<span light:json.check="'profile.meta.city', 'SET', 'MISSING'"></span>
+<span light:json.check="'profile.meta.city', 'SET', 'MISSING', 'text-green-600', 'text-red-600'"></span>
+```
+
+- `light:json.add="path, value"` → append value/object to JSON array path
+- `light:json.remove="path, target, 'index'|'value'"` → remove by index or by value
+- `light:json.remove="'a.b.c'"` → delete dot-path key directly
+- `light:json.check="path, yesText, noText"` → dot-path existence check
+- `light:json.check="path, yesText, noText, trueClass, falseClass"` → existence + text + class toggle
+
+> Tip: For nested validation keys, both formats are supported:
+> `subjects_json.0.name` and `subjects_json[0].name`.
+
 #### `light:state`
 
 Initialize client-side state variables. Defined on the root element.
@@ -543,7 +594,7 @@ public function updateUser(Request $request): array
 
     return [
         'message' => 'User updated!',
-        ...patch()->update('users', $user->fresh()),
+        ...patch()->update('users', $user),
     ];
 }
 ```

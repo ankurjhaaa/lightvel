@@ -154,6 +154,27 @@ The layout MUST have `@lightScripts` before `</body>` and a CSRF meta tag:
 |-----------|---------|---------|
 | `light:function="key=value"` | Set state instantly on client | `<button light:function="showModal=true">` |
 
+### Array Selection Utilities
+
+| Directive | Purpose | Example |
+|-----------|---------|---------|
+| `light:array="key"` | Ensure array state exists | `<div light:array="selected_ids">` |
+| `light:array.add="array, value"` | Toggle value in selection array | `<td light:array.add="selected_ids, Number(row.id)">` |
+| `light:array.check="array, value"` | Check membership | `<input light:array.check="selected_ids, Number(row.id)">` |
+| `light:array.check="array, value, 'on', 'off'"` | Membership + class toggle | `<tr light:array.check="selected_ids, Number(row.id), 'bg-teal-50', 'bg-white'">` |
+| `light:array.all="array, list, idKey"` | Fill array from list | `<button light:array.all="selected_ids, users, id">Select All</button>` |
+
+### JSON Utilities
+
+| Directive | Purpose | Example |
+|-----------|---------|---------|
+| `light:json.add="path, value"` | Append object/value to JSON array path | `<button light:json.add="subjects_json, {name:'', max_marks:100}">+ Add</button>` |
+| `light:json.remove="path, target, 'index'"` | Remove by index | `<button light:json.remove="subjects_json, $index, 'index'">Delete</button>` |
+| `light:json.remove="path, target, 'value'"` | Remove by value/object | `<button light:json.remove="subjects_json, subject, 'value'">Delete</button>` |
+| `light:json.remove="'a.b.c'"` | Delete dot-path key directly | `<button light:json.remove="'profile.meta.city'">Remove</button>` |
+| `light:json.check="path, yes, no"` | Dot-path existence check + output | `<span light:json.check="'profile.meta.city', 'SET', 'MISSING'"></span>` |
+| `light:json.check="path, yes, no, trueClass, falseClass"` | Existence + output + class toggle | `<span light:json.check="'profile.meta.city', 'SET', 'MISSING', 'text-green-600', 'text-red-600'"></span>` |
+
 > **CRITICAL FOR AI:** Use `light:function` for UI toggles (modals, tabs, dropdowns). Use `light:click` ONLY when you need the server (DB operations). This is the key to fast UX.
 
 ### Conditional Rendering
@@ -192,6 +213,10 @@ Inside `light:for`, you can access:
 | `light:error="field"` | Show error message | `<span light:error="email">` |
 
 Supported rules: `required`, `email`, `numeric`, `min:N`, `max:N`
+
+Nested array validation keys can be handled in both forms:
+- `subjects_json.0.name`
+- `subjects_json[0].name`
 
 ### State Initialization
 
@@ -281,7 +306,7 @@ public function save(Request $request): array
         return [
             'showModal' => false, 'editingId' => null, 'name' => '',
             'message' => 'Updated!',
-            ...patch()->update('items', $item->fresh()),
+            ...patch()->update('items', $item),
         ];
     }
 
@@ -375,6 +400,11 @@ Always return `'message' => 'Your message'` from actions.
 10. **After creating/modifying Blade files:** Run `php artisan view:clear` to rebuild compiled views.
 
 11. **Loading indicators:** Use `light:loading` for any element that should appear during AJAX. Use `lightvel-spinner` class for built-in spinner.
+
+12. **For dynamic JSON rows, prefer directives over long `light:function`:**
+    - Add row: `light:json.add`
+    - Remove row: `light:json.remove`
+    - Existence-based output/style: `light:json.check`
 
 ---
 
