@@ -99,7 +99,7 @@ class Assets
         }
 
         return $bootStyles . PHP_EOL
-            . '<script>' . $boot . '</script>' . PHP_EOL
-            . '<script>' . PHP_EOL . self::$cachedJs . PHP_EOL . '</script>';
+            . '<script data-light-boot-config="true">' . $boot . '</script>' . PHP_EOL
+            . '<script data-light-runtime="true">' . PHP_EOL . self::$cachedJs . PHP_EOL . '</script>';
     }
 }

@@ -127,7 +127,7 @@ class Compiler
 
         // Transform remaining {{ light(...) }} into reactive expression spans.
         // Example:
-        //   {{ light(name ? name : 'na') }}
+        //   {{ light("name ? name : 'na'") }}
         // becomes:
         //   <span data-light-text-expr="name ? name : 'na'"></span>
         $view = preg_replace_callback('/\{\{\s*light\((.*?)\)\s*\}\}/s', function ($match) {

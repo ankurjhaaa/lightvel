@@ -3397,6 +3397,17 @@
             return;
         }
 
+        // React-like feel: switch route state first, then hydrate fetched HTML/state.
+        if (!options.fromPop) {
+            if (options.replace) {
+                history.replaceState({}, '', targetUrl);
+            } else {
+                history.pushState({}, '', targetUrl);
+            }
+        }
+
+        // Keep cloak skeletons visible while navigation fetch + hydration is in-flight.
+        document.documentElement.setAttribute('data-light-booting', 'true');
         startProgress();
 
         fetch(targetUrl, {
@@ -3421,15 +3432,6 @@
             .then((result) => {
                 if (result.type === 'json') {
                     update(result.payload);
-
-                    if (!options.fromPop) {
-                        if (options.replace) {
-                            history.replaceState({}, '', targetUrl);
-                        } else {
-                            history.pushState({}, '', targetUrl);
-                        }
-                    }
-
                     return;
                 }
 
@@ -3451,36 +3453,33 @@
                 document.body.innerHTML = doc.body.innerHTML;
 
                 // Sync body classes if any exist
-                if (doc.body.className) {
-                    document.body.className = doc.body.className;
-                }
+                document.body.className = doc.body.className || '';
 
                 // 4. Re-create progress bar element (innerHTML destroyed the old one)
                 progressEl = null; // Force re-creation on next navigate
 
                 // 5. Re-execute scripts (since innerHTML doesn't execute newly injected <script> tags)
                 document.body.querySelectorAll('script').forEach((oldScript) => {
+                    if (
+                        oldScript.getAttribute('data-light-runtime') === 'true'
+                        || oldScript.getAttribute('data-light-boot-config') === 'true'
+                    ) {
+                        oldScript.remove();
+                        return;
+                    }
+
                     let newScript = document.createElement('script');
                     Array.from(oldScript.attributes).forEach((attr) => newScript.setAttribute(attr.name, attr.value));
                     newScript.appendChild(document.createTextNode(oldScript.innerHTML));
                     oldScript.parentNode.replaceChild(newScript, oldScript);
                 });
 
-                // 6. Update browser history
-                if (!options.fromPop) {
-                    if (options.replace) {
-                        history.replaceState({}, '', targetUrl);
-                    } else {
-                        history.pushState({}, '', targetUrl);
-                    }
-                }
-
-                // 7. Reset scroll
+                // 6. Reset scroll
                 if (!options.fromPop) {
                     window.scrollTo(0, 0);
                 }
 
-                // 8. Initialize Component State and DOM bindings for the newly injected HTML
+                // 7. Initialize Component State and DOM bindings for the newly injected HTML
                 initJsState(document);
                 syncBindings();
             })

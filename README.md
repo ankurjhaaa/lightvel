@@ -385,15 +385,17 @@ Bind reactive text content to a state value. Updates automatically when state ch
 
 Use Lightvel expressions with ternary/if-style logic and get automatic live sync.
 
+For clean editor diagnostics (avoid PHP0415 undefined constant warnings), pass expression as a string.
+
 ```html
 <!-- Reactive conditional print -->
-<p>{{ light(name ? name : 'na') }}</p>
+<p>{{ light("name ? name : 'na'") }}</p>
 
 <!-- Nested checks -->
-<span>{{ light(user && user.email ? user.email : 'No email') }}</span>
+<span>{{ light("user && user.email ? user.email : 'No email'") }}</span>
 
 <!-- Works inside repeated templates too -->
-<li>{{ light(item.active ? item.name : 'Inactive') }}</li>
+<li>{{ light("item.active ? item.name : 'Inactive'") }}</li>
 ```
 
 `{{ light.variableName }}` also still works and remains reactive.
@@ -452,7 +454,7 @@ You can use both variable and expression forms:
 
 ```html
 <p>Hello, {{ light.name }}!</p>
-<p>Status: {{ light(isOnline ? 'Online' : 'Offline') }}</p>
+<p>Status: {{ light("isOnline ? 'Online' : 'Offline'") }}</p>
 ```
 
 This compiles to reactive text bindings and updates automatically when state changes.
@@ -1098,11 +1100,11 @@ Each generated component also includes one random Sanskrit life-wisdom line insi
 
 ## Full CRUD Example
 
-See [`example-users-crud-v1.3.49.blade.php`](example-users-crud-v1.3.49.blade.php) for a complete, production-ready showcase with:
+See [`example-users-crud-v1.3.78.blade.php`](example-users-crud-v1.3.78.blade.php) for a complete, production-ready showcase with:
 
 - CRUD table + pagination + patch updates
 - Form-free live action: `light:model.live="searchUsers"`
-- Reactive expression print: `{{ light(name ? name : 'na') }}`
+- Reactive expression print: `{{ light("name ? name : 'na'") }}`
 - Reactive attributes: `light:attr.class`, `light:attr.disabled`, `light:attr.hidden`
 - Array helpers: `light:array.add`, `light:array.check`
 - JSON helpers: `light:json.add`, `light:json.remove`
