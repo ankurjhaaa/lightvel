@@ -194,5 +194,42 @@ class Directives
         Blade::directive('lightScripts', function () {
             return '<?php echo \\Lightvel\\Support\\Assets::scripts(); ?>';
         });
+
+        // @light() directive — outputs state values directly (outside HTML tags)
+        // Usage:
+        //   @light('message')                    → echo $state['message']
+        //   @light('user.name')                  → echo $state['user']['name']
+        //   @if($state['active']) @light('msg') @endif  → full PHP conditionals
+        // 
+        // This is for server-side STATIC output at page load time (not reactive).
+        // For reactive/dynamic UI updates, use light:text attribute on HTML elements.
+        Blade::directive('light', function ($expression) {
+            // Generate PHP to evaluate dot notation path in $state array
+            // @light('user.name') → evaluate_dot_notation($state, 'user.name')
+            return "<?php echo \\Lightvel\\Support\\Blade\\Directives::evaluateStatePath(\$state ?? [], {$expression}); ?>";
+        });
+    }
+
+    /**
+     * Evaluate a dot-notation path in the component state array.
+     * 
+     * @param array $state The component state array
+     * @param string $path Dot-notation path (e.g., 'user.name', 'items.0.email')
+     * @return mixed The value at that path, or empty string if not found
+     */
+    public static function evaluateStatePath(array $state, string $path): mixed
+    {
+        $parts = explode('.', $path);
+        $value = $state;
+
+        foreach ($parts as $part) {
+            if (is_array($value) && isset($value[$part])) {
+                $value = $value[$part];
+            } else {
+                return '';
+            }
+        }
+
+        return $value;
     }
 }

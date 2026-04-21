@@ -8,7 +8,7 @@
     <img src="https://img.shields.io/badge/Laravel-11%20%7C%2012%20%7C%2013-red" alt="Laravel">
     <img src="https://img.shields.io/badge/PHP-8.2%2B-blue" alt="PHP">
     <img src="https://img.shields.io/badge/License-MIT-green" alt="License">
-    <img src="https://img.shields.io/badge/Version-1.3.72-purple" alt="Version">
+    <img src="https://img.shields.io/badge/Version-1.3.73-purple" alt="Version">
   </p>
 </p>
 
@@ -380,6 +380,38 @@ Bind reactive text content to a state value. Updates automatically when state ch
 <!-- Works with nested properties -->
 <span light:text="user.name"></span>
 ```
+
+#### `@light()` directive
+
+Output state values directly in Blade code **outside** HTML tags. Perfect for conditionals and loops. **⚠️ Static at page load** — not reactive like `light:text`.
+
+```blade
+<!-- Direct output — no HTML tag needed -->
+@light('message')
+@light('user.email')
+
+<!-- Inside PHP conditionals -->
+@if($state['status'] === 'active')
+  Active: @light('status')
+@endif
+
+<!-- In loops -->
+@foreach($state['items'] as $item)
+  Item: {{ $item['name'] }}
+@endforeach
+
+<!-- Dot notation for nested values -->
+User email: @light('user.profile.email')
+```
+
+**Key Difference:**
+- `light:text="field"` → Reactive, updates in real-time when state changes
+- `@light('field')` → Static server-side output at page load, works with PHP conditions
+
+**Use cases:**
+- Conditional SEO meta tags: `@if($state['published']) <meta ...> @endif`
+- Dynamic page titles: `<title>@light('page.title')</title>`
+- Complex logic that needs PHP: `@if($state['total'] > 100) Large @else Small @endif`
 
 #### `light:bind`
 
