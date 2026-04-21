@@ -8,7 +8,7 @@
     <img src="https://img.shields.io/badge/Laravel-11%20%7C%2012%20%7C%2013-red" alt="Laravel">
     <img src="https://img.shields.io/badge/PHP-8.2%2B-blue" alt="PHP">
     <img src="https://img.shields.io/badge/License-MIT-green" alt="License">
-    <img src="https://img.shields.io/badge/Version-1.3.73-purple" alt="Version">
+    <img src="https://img.shields.io/badge/Version-1.3.74-purple" alt="Version">
   </p>
 </p>
 
@@ -381,37 +381,45 @@ Bind reactive text content to a state value. Updates automatically when state ch
 <span light:text="user.name"></span>
 ```
 
-#### `@light()` directive
+#### `{{ light(...) }}` reactive expressions
 
-Output state values directly in Blade code **outside** HTML tags. Perfect for conditionals and loops. **⚠️ Static at page load** — not reactive like `light:text`.
+Use Lightvel expressions with ternary/if-style logic and get automatic live sync.
 
-```blade
-<!-- Direct output — no HTML tag needed -->
-@light('message')
-@light('user.email')
+```html
+<!-- Reactive conditional print -->
+<p>{{ light(name ? name : 'na') }}</p>
 
-<!-- Inside PHP conditionals -->
-@if($state['status'] === 'active')
-  Active: @light('status')
-@endif
+<!-- Nested checks -->
+<span>{{ light(user && user.email ? user.email : 'No email') }}</span>
 
-<!-- In loops -->
-@foreach($state['items'] as $item)
-  Item: {{ $item['name'] }}
-@endforeach
-
-<!-- Dot notation for nested values -->
-User email: @light('user.profile.email')
+<!-- Works inside repeated templates too -->
+<li>{{ light(item.active ? item.name : 'Inactive') }}</li>
 ```
 
-**Key Difference:**
-- `light:text="field"` → Reactive, updates in real-time when state changes
-- `@light('field')` → Static server-side output at page load, works with PHP conditions
+`{{ light.variableName }}` also still works and remains reactive.
 
-**Use cases:**
-- Conditional SEO meta tags: `@if($state['published']) <meta ...> @endif`
-- Dynamic page titles: `<title>@light('page.title')</title>`
-- Complex logic that needs PHP: `@if($state['total'] > 100) Large @else Small @endif`
+#### `light:attr.*` (reactive attributes)
+
+Bind any HTML attribute using expression logic.
+
+```html
+<!-- Dynamic class string -->
+<button
+    class="px-4 py-2 rounded"
+    light:attr.class="isActive ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-700'"
+>
+    Save
+</button>
+
+<!-- Boolean attributes -->
+<button light:attr.disabled="isSaving || !name">Submit</button>
+<div light:attr.hidden="!showPanel">Panel</div>
+
+<!-- Any attribute -->
+<input light:attr.placeholder="name ? 'Edit user' : 'Enter name'" />
+```
+
+If you only need class toggling object style, `light:class` continues to work as before.
 
 #### `light:bind`
 
@@ -440,13 +448,14 @@ Bind raw HTML content (use with caution — no XSS sanitization).
 
 #### Mustache syntax
 
-You can also use `{{ light.variableName }}` in templates:
+You can use both variable and expression forms:
 
 ```html
 <p>Hello, {{ light.name }}!</p>
+<p>Status: {{ light(isOnline ? 'Online' : 'Offline') }}</p>
 ```
 
-This compiles to `<span data-light-text="name"></span>`.
+This compiles to reactive text bindings and updates automatically when state changes.
 
 ---
 
@@ -1058,17 +1067,24 @@ php artisan lightvel:layout admin
 php artisan lightvel:install
 ```
 
+`lightvel:make` now generates a clean starter file with only essential state + view structure so you can start immediately without deleting extra sample methods.
+
+Each generated component also includes one random Sanskrit life-wisdom line inside a hidden `div` HTML comment.
+
 ---
 
 ## Full CRUD Example
 
-See [`example-users-crud-v1.3.49.blade.php`](example-users-crud-v1.3.49.blade.php) for a complete, production-ready CRUD example with:
+See [`example-users-crud-v1.3.49.blade.php`](example-users-crud-v1.3.49.blade.php) for a complete, production-ready showcase with:
 
-- User listing with `light:for`
-- Debounced live search with `light:model.live`
-- Create/Edit modal with `light:function` (instant open/close)
-- Form validation with `light:rules` + `light:error`
-- Surgical updates with `patch()->insert/update/delete`
+- CRUD table + pagination + patch updates
+- Form-free live action: `light:model.live="searchUsers"`
+- Reactive expression print: `{{ light(name ? name : 'na') }}`
+- Reactive attributes: `light:attr.class`, `light:attr.disabled`, `light:attr.hidden`
+- Array helpers: `light:array.add`, `light:array.check`
+- JSON helpers: `light:json.add`, `light:json.remove`
+- Image preview: `light:image` + `light:src`
+- Validation + loading + modal + navigation
 
 **Setup for testing:**
 

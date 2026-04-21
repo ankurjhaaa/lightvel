@@ -23,6 +23,7 @@ use Lightvel\Support\Assets;
  *   light:show="expr"        → data-light-show="expr"        → syncLightConditionals() display toggle
  *   light:if="expr"          → data-light-if="expr"          → syncLightConditionals() display toggle
  *   light:class="expr"       → data-light-class="expr"       → syncJsBindings() class toggle
+ *   light:attr.NAME="expr"   → data-light-attr-NAME="expr"   → syncLightAttributeBindings()
  *   light:for="item in list" → data-light-for="item in list" → renderLightForTemplates() loop rendering
  *   light:state="..."        → data-light-state="..."        → initJsState() initial state setup
  *   light:const="..."        → data-light-const="..."        → initJsState() read-only constants
@@ -151,6 +152,12 @@ class Directives
             $view = preg_replace('/light:show="([^"]+)"/', 'data-light-show="$1"', $view);
             $view = preg_replace('/light:if="([^"]+)"/', 'data-light-if="$1"', $view);
             $view = preg_replace('/light:class="([^"]+)"/', 'data-light-class="$1"', $view);
+            $view = preg_replace_callback('/light:attr\.([A-Za-z_][A-Za-z0-9_\-:]*)=("|\')(.*?)\2/', function ($match) use ($normalizeLightExpr) {
+                $name = strtolower($match[1]);
+                $expr = $normalizeLightExpr($match[3]);
+
+                return 'data-light-attr-' . $name . '="' . $expr . '"';
+            }, $view);
 
             // --- List rendering ---
             // light:for="user in users" → clones the element for each item
@@ -195,41 +202,5 @@ class Directives
             return '<?php echo \\Lightvel\\Support\\Assets::scripts(); ?>';
         });
 
-        // @light() directive — outputs state values directly (outside HTML tags)
-        // Usage:
-        //   @light('message')                    → echo $state['message']
-        //   @light('user.name')                  → echo $state['user']['name']
-        //   @if($state['active']) @light('msg') @endif  → full PHP conditionals
-        // 
-        // This is for server-side STATIC output at page load time (not reactive).
-        // For reactive/dynamic UI updates, use light:text attribute on HTML elements.
-        Blade::directive('light', function ($expression) {
-            // Generate PHP to evaluate dot notation path in $state array
-            // @light('user.name') → evaluate_dot_notation($state, 'user.name')
-            return "<?php echo \\Lightvel\\Support\\Blade\\Directives::evaluateStatePath(\$state ?? [], {$expression}); ?>";
-        });
-    }
-
-    /**
-     * Evaluate a dot-notation path in the component state array.
-     * 
-     * @param array $state The component state array
-     * @param string $path Dot-notation path (e.g., 'user.name', 'items.0.email')
-     * @return mixed The value at that path, or empty string if not found
-     */
-    public static function evaluateStatePath(array $state, string $path): mixed
-    {
-        $parts = explode('.', $path);
-        $value = $state;
-
-        foreach ($parts as $part) {
-            if (is_array($value) && isset($value[$part])) {
-                $value = $value[$part];
-            } else {
-                return '';
-            }
-        }
-
-        return $value;
     }
 }

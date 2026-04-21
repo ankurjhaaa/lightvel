@@ -106,6 +106,20 @@ class Compiler
         $view = preg_replace('/\{\{\s*echo\.([A-Za-z_][A-Za-z0-9_\.\-\>]*)\s*\}\}/', '<span data-light-text="$1"></span>', $view);
         $view = preg_replace('/\{\{\s*light\.([A-Za-z_][A-Za-z0-9_\.\-\>]*)\s*\}\}/', '<span data-light-text="$1"></span>', $view);
 
+        // Transform {{ light(...) }} into reactive expression spans.
+        // Example:
+        //   {{ light(name ? name : 'na') }}
+        // becomes:
+        //   <span data-light-text-expr="name ? name : 'na'"></span>
+        $view = preg_replace_callback('/\{\{\s*light\((.*?)\)\s*\}\}/s', function ($match) {
+            $expr = trim((string) ($match[1] ?? ''));
+            if ($expr === '') {
+                return '<span data-light-text-expr=""></span>';
+            }
+
+            return '<span data-light-text-expr="' . htmlspecialchars($expr, ENT_QUOTES, 'UTF-8') . '"></span>';
+        }, $view);
+
         // --- FOOTER PHP ---
         // This code runs after the Blade template has been rendered.
         // It wraps the HTML content in a data-light-root container and either:

@@ -1418,6 +1418,8 @@
         }
 
         syncLightTextBindings(key);
+        syncLightTextExpressionBindings(key);
+        syncLightAttributeBindings(key);
 
         if (full) {
             syncGlobalJsBindings();
@@ -1515,6 +1517,133 @@
             if (el.innerText !== text) {
                 el.innerText = text;
             }
+        });
+    }
+
+    function syncLightTextExpressionBindings(key) {
+        let api = getJsApi();
+
+        document.querySelectorAll('[data-light-text-expr]:not([data-light-scoped="1"])').forEach((el) => {
+            let expr = el.getAttribute('data-light-text-expr');
+            if (!expr) return;
+
+            if (key && !expr.includes(key)) return;
+
+            let value = evaluateLightExpression(expr, api.state);
+            let text = value == null ? '' : String(value);
+            if (el.innerText !== text) {
+                el.innerText = text;
+            }
+        });
+    }
+
+    function isBooleanHtmlAttribute(name) {
+        return [
+            'disabled',
+            'hidden',
+            'readonly',
+            'required',
+            'checked',
+            'selected',
+            'multiple',
+            'autofocus',
+            'open',
+        ].includes(name);
+    }
+
+    function normalizeClassBindingValue(value) {
+        if (value == null || value === false) {
+            return '';
+        }
+
+        if (typeof value === 'string' || typeof value === 'number') {
+            return String(value).trim();
+        }
+
+        if (Array.isArray(value)) {
+            return value.map((item) => String(item || '').trim()).filter(Boolean).join(' ');
+        }
+
+        if (typeof value === 'object') {
+            return Object.entries(value)
+                .filter(([, enabled]) => !!enabled)
+                .map(([className]) => className)
+                .join(' ');
+        }
+
+        return '';
+    }
+
+    function getLightAttrBindings(el) {
+        let bindings = [];
+        if (!el || !el.attributes) return bindings;
+
+        Array.from(el.attributes).forEach((attr) => {
+            if (!attr || !attr.name || !attr.name.startsWith('data-light-attr-')) {
+                return;
+            }
+
+            let name = attr.name.replace('data-light-attr-', '').trim().toLowerCase();
+            if (!name) return;
+
+            bindings.push({ name, expr: attr.value || '' });
+        });
+
+        return bindings;
+    }
+
+    function applyLightAttrBinding(el, attrName, expr, state) {
+        if (!expr) return;
+
+        let value = evaluateLightExpression(expr, state);
+
+        if (attrName === 'class') {
+            if (!Object.prototype.hasOwnProperty.call(el.dataset, 'lightAttrBaseClass')) {
+                el.dataset.lightAttrBaseClass = el.getAttribute('class') || '';
+            }
+
+            let baseClass = el.dataset.lightAttrBaseClass || '';
+            let dynamicClass = normalizeClassBindingValue(value);
+            let nextClass = `${baseClass} ${dynamicClass}`.trim().replace(/\s+/g, ' ');
+
+            if (nextClass) {
+                el.setAttribute('class', nextClass);
+            } else {
+                el.removeAttribute('class');
+            }
+
+            return;
+        }
+
+        if (isBooleanHtmlAttribute(attrName)) {
+            if (!!value) {
+                el.setAttribute(attrName, attrName);
+            } else {
+                el.removeAttribute(attrName);
+            }
+
+            return;
+        }
+
+        if (value == null || value === false) {
+            el.removeAttribute(attrName);
+            return;
+        }
+
+        el.setAttribute(attrName, String(value));
+    }
+
+    function syncLightAttributeBindings(key) {
+        let api = getJsApi();
+
+        document.querySelectorAll('*:not([data-light-scoped="1"])').forEach((el) => {
+            let bindings = getLightAttrBindings(el);
+            if (!bindings.length) return;
+
+            bindings.forEach(({ name, expr }) => {
+                if (key && expr && !expr.includes(key)) return;
+                applyLightAttrBinding(el, name, expr, api.state);
+            });
         });
     }
 
@@ -1682,6 +1811,25 @@
 
             let value = evaluateLightExpression(expr, scopeState);
             el.innerText = value == null ? '' : String(value);
+        });
+
+        scopedElements('[data-light-text-expr]').forEach((el) => {
+            el.setAttribute('data-light-scoped', '1');
+            let expr = el.getAttribute('data-light-text-expr');
+            if (!expr) return;
+
+            let value = evaluateLightExpression(expr, scopeState);
+            el.innerText = value == null ? '' : String(value);
+        });
+
+        scopedElements('*').forEach((el) => {
+            let bindings = getLightAttrBindings(el);
+            if (!bindings.length) return;
+
+            el.setAttribute('data-light-scoped', '1');
+            bindings.forEach(({ name, expr }) => {
+                applyLightAttrBinding(el, name, expr, scopeState);
+            });
         });
 
         scopedElements('[data-light-src]').forEach((el) => {

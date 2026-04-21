@@ -1,75 +1,19 @@
 @php
 
-use Illuminate\Support\Facades\DB;
 use Lightvel\Component;
 use Lightvel\Layout;
 
 new #[Layout('{{ layout_name }}')] class extends Component {
-
-    protected function usersQuery()
-    {
-        return DB::table('users')
-            ->select('id', 'name', 'email')
-            ->orderByDesc('id');
-    }
-
-    public function lightvel()
+    public function lightvel(): array
     {
         return [
-            'users' => $this->usersQuery()->get(),
+            'message' => 'Start building from here.',
         ];
     }
-
-    public function deleteUser(int $id)
-    {
-        $this->usersQuery()->where('id', $id)->delete();
-
-        return [
-            'users' => $this->usersQuery()->get(),
-        ];
-    }
-
 };
 
 @endphp
 
-<div style="max-width: 960px; margin: 32px auto; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 14px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08);">
-    <div style="display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid #e5e7eb;">
-        <h1 style="margin: 0; font-size: 22px; color: #111827;">Users</h1>
-        <div style="font-size: 14px; color: #6b7280;">Total: <strong><span light:text="users.length"></span></strong></div>
-    </div>
-
-    <div style="overflow-x: auto;">
-        <table style="width: 100%; border-collapse: collapse; table-layout: auto;">
-            <thead>
-                <tr style="background: #f9fafb;">
-                    <th style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: left;">ID</th>
-                    <th style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: left;">Name</th>
-                    <th style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: left;">Email</th>
-                    <th style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: right;">Action</th>
-                </tr>
-            </thead>
-
-            <tbody>
-                <tr light:for="user in users">
-                    <td style="padding: 12px; border-bottom: 1px solid #f3f4f6;" light:text="user.id"></td>
-                    <td style="padding: 12px; border-bottom: 1px solid #f3f4f6;" light:text="user.name"></td>
-                    <td style="padding: 12px; border-bottom: 1px solid #f3f4f6;" light:text="user.email"></td>
-                    <td style="padding: 12px; border-bottom: 1px solid #f3f4f6; text-align: right;">
-                        <button
-                            type="button"
-                            style="padding: 8px 14px; border: 0; border-radius: 8px; background: #dc2626; color: #ffffff; cursor: pointer;"
-                            light:click="deleteUser(user.id)"
-                        >
-                            Delete
-                        </button>
-                    </td>
-                </tr>
-            </tbody>
-        </table>
-
-        <div light:if="users.length === 0" style="padding: 18px; color: #6b7280; text-align: center;">
-            No users found.
-        </div>
-    </div>
+<div>
+    <!-- {{ sanskrit_comment }} -->
 </div>
