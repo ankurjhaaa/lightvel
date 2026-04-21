@@ -48,12 +48,16 @@ class Assets
 
         $progressColor = config('lightvel.progress_bar_color', '#111827');
         $messageEndpoint = config('lightvel.message_endpoint', '/lightvel/message');
+        $hydrateStateOnAction = (bool) config('lightvel.hydrate_state_on_action', true);
+        $allowLiveActionWithoutForm = (bool) config('lightvel.allow_live_action_without_form', true);
 
         // Boot config — sets window.Lightvel before the runtime IIFE executes
         $boot = 'window.Lightvel = window.Lightvel || {};'
             . 'document.documentElement.setAttribute("data-light-booting", "true");'
             . 'window.Lightvel.progressBarColor = ' . json_encode($progressColor) . ';'
-            . 'window.Lightvel.messageEndpoint = ' . json_encode($messageEndpoint) . ';';
+            . 'window.Lightvel.messageEndpoint = ' . json_encode($messageEndpoint) . ';'
+            . 'window.Lightvel.hydrateStateOnAction = ' . json_encode($hydrateStateOnAction) . ';'
+            . 'window.Lightvel.allowLiveActionWithoutForm = ' . json_encode($allowLiveActionWithoutForm) . ';';
 
         // Boot styles — FOUC prevention
         // Hides ALL reactive elements during initial load to prevent:

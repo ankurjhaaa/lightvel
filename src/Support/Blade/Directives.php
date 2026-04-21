@@ -67,7 +67,9 @@ class Directives
 
             // --- Two-way data binding ---
             // light:model.live sends live updates on every input keystroke
-            $view = preg_replace('/light:model\.live="([^"]+)"/', 'data-light-model="$1" data-light-model-live="true"', $view);
+            $view = preg_replace_callback('/light:model\.live=("|\')(.*?)\1/', function ($match) {
+                return 'data-light-model="' . $match[2] . '" data-light-model-live="' . $match[2] . '"';
+            }, $view);
             $view = preg_replace('/light:model="([^"]+)"/', 'data-light-model="$1"', $view);
 
             // --- Action triggers ---

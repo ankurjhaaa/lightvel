@@ -10,6 +10,7 @@ use Illuminate\Support\ViewErrorBag;
 use Illuminate\Validation\ValidationException;
 use ReflectionMethod;
 use ReflectionNamedType;
+use Throwable;
 
 /**
  * Base class for all Lightvel reactive components.
@@ -360,6 +361,20 @@ class Component
 
         $action = $payload['action'] ?? null;
         $params = $payload['params'] ?? [];
+        $state = $payload['state'] ?? [];
+
+        if (is_string($state) && $state !== '') {
+            $decodedState = json_decode($state, true);
+
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decodedState)) {
+                $state = $decodedState;
+            }
+        }
+
+        if (is_array($state) && !empty($state)) {
+            $this->setState($state);
+            request()->merge($state);
+        }
 
         if (is_string($params) && $params !== '') {
             $decodedParams = json_decode($params, true);
@@ -377,10 +392,31 @@ class Component
                 // Positional args: e.g. deleteUser(5) → args = [5]
                 $actionArgs = $params;
             } else {
+                $embeddedState = $params['__light_state'] ?? null;
+                if (is_string($embeddedState) && $embeddedState !== '') {
+                    $decodedEmbeddedState = json_decode($embeddedState, true);
+                    if (json_last_error() === JSON_ERROR_NONE && is_array($decodedEmbeddedState)) {
+                        $embeddedState = $decodedEmbeddedState;
+                    }
+                }
+
+                if (is_array($embeddedState) && !empty($embeddedState)) {
+                    $this->setState($embeddedState);
+                    request()->merge($embeddedState);
+                }
+
+                $embeddedArgs = $params['__light_args'] ?? null;
+                if (is_array($embeddedArgs) && array_is_list($embeddedArgs)) {
+                    $actionArgs = $embeddedArgs;
+                }
+
+                unset($params['__light_state'], $params['__light_args']);
+
                 // Named params: merge into state and request (e.g. form data)
-                $this->setState($params);
-                request()->merge($params);
-                $actionArgs = [];
+                if (!empty($params)) {
+                    $this->setState($params);
+                    request()->merge($params);
+                }
             }
         }
 
@@ -403,6 +439,13 @@ class Component
 
                 return response()->json((object) []);
             }
+
+            if ((bool) config('lightvel.strict_action_errors', true)) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Lightvel action not found or invalid.',
+                ], 422);
+            }
         } catch (ValidationException $e) {
             // Use $e->errors() — this works with BOTH $this->validate() and $request->validate()
             // $this->getErrorBag() only works when $this->validate() sets it.
@@ -413,6 +456,15 @@ class Component
                 'message' => 'Validation failed',
                 '__lightvel_errors' => $errors,
             ]);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'status' => false,
+                'message' => (bool) config('lightvel.expose_action_exceptions', false)
+                    ? $e->getMessage()
+                    : 'Lightvel action failed.',
+            ], 500);
         }
 
         return response()->json((object) []);

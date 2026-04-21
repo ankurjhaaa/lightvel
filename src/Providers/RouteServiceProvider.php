@@ -110,6 +110,7 @@ class RouteServiceProvider extends ServiceProvider
             $path = $parsedTarget['path'] ?? '/';
             $action = $request->input('action', '');
             $params = $request->input('params', []);
+            $state = $request->input('state', []);
 
             // Match the target URL to a registered route to find the view name
             $fakeRequest = Request::create($path, 'GET');
@@ -149,12 +150,14 @@ class RouteServiceProvider extends ServiceProvider
             $request->merge([
                 'action' => $action,
                 'params' => $params,
+                'state' => $state,
             ]);
 
             // Set JSON content for Component::run() to parse
             $request->json()->replace([
                 'action' => $action,
                 'params' => $params,
+                'state' => $state,
             ]);
 
             try {

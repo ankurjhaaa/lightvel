@@ -2437,28 +2437,43 @@
             return;
         }
 
+        let liveTarget = String(modelEl.getAttribute('data-light-model-live') || '').trim();
+        let modelKey = String(getFieldName(modelEl) || modelEl.getAttribute('data-light-model') || '').trim();
+        let explicitAction = '';
+
+        if (liveTarget && liveTarget !== 'true' && liveTarget !== modelKey) {
+            explicitAction = liveTarget;
+        }
+
         let form = modelEl.closest('form[data-light-submit]');
-        if (!form) {
+        if (!explicitAction && !form) {
             return;
         }
 
-        if (!validateScope(form)) {
+        if (explicitAction && !form && parseBoolean(getConfig().allowLiveActionWithoutForm, true) === false) {
             return;
         }
 
-        let action = form.dataset.lightSubmit;
+        if (form && !validateScope(form)) {
+            return;
+        }
+
+        let action = explicitAction || (form ? form.dataset.lightSubmit : '');
         if (!action) {
             return;
         }
 
-        let data = {
-            ...collect(form),
-            ...Object.fromEntries(new FormData(form).entries()),
-        };
+        let data = form
+            ? {
+                ...collect(form),
+                ...Object.fromEntries(new FormData(form).entries()),
+            }
+            : collect(document.querySelector('[data-light-root]') || document);
 
         call(action, data, {
             debounceMs: getElementDebounceMs(modelEl),
-            debounceKey: `model-live:${action}`,
+            debounceKey: `model-live:${action}:${modelKey}`,
+            cancelKey: `model-live:${action}`,
         });
     }
 
@@ -2487,6 +2502,10 @@
         let endpoint = root?.dataset.lightEndpoint || getConfig().messageEndpoint || '/lightvel/message';
         let component = root?.dataset.lightComponent || '';
         let fingerprint = root?.dataset.lightFingerprint || '';
+        let hydrateStateOnAction = parseBoolean(getConfig().hydrateStateOnAction, true);
+        let stateSnapshot = hydrateStateOnAction
+            ? (options.state || collect(root || document))
+            : null;
 
         // Optional response caching (e.g. for autocomplete results)
         let cacheEnabled = !!options.cache;
@@ -2546,6 +2565,9 @@
             formData.append('component', component);
             formData.append('fingerprint', fingerprint);
             formData.append('params', JSON.stringify(stripBinaryValues(params)));
+            if (stateSnapshot && typeof stateSnapshot === 'object') {
+                formData.append('state', JSON.stringify(stateSnapshot));
+            }
             appendBinaryValues(formData, params);
             requestBody = formData;
         } else {
@@ -2554,6 +2576,7 @@
                 url: window.location.href,
                 action,
                 params,
+                state: stateSnapshot,
                 component,
                 fingerprint,
             });

@@ -8,7 +8,7 @@
     <img src="https://img.shields.io/badge/Laravel-11%20%7C%2012%20%7C%2013-red" alt="Laravel">
     <img src="https://img.shields.io/badge/PHP-8.2%2B-blue" alt="PHP">
     <img src="https://img.shields.io/badge/License-MIT-green" alt="License">
-    <img src="https://img.shields.io/badge/Version-1.3.49-purple" alt="Version">
+    <img src="https://img.shields.io/badge/Version-1.3.50-purple" alt="Version">
   </p>
 </p>
 
@@ -195,7 +195,12 @@ Two-way data binding for form inputs. Syncs the input value with client-side sta
 
 #### `light:model.live`
 
-Triggers the parent form's `light:submit` action on every keystroke (debounced). Perfect for **live search**.
+Supports two modes:
+
+1. `light:model.live="fieldName"` — updates state and triggers nearest parent form `light:submit` action.
+2. `light:model.live="actionName"` — updates state and directly calls that action (form not required).
+
+Both modes debounce using `light:debounce` when provided.
 
 ```html
 <form light:submit="searchUsers">
@@ -206,6 +211,14 @@ Triggers the parent form's `light:submit` action on every keystroke (debounced).
         placeholder="Search..."
     />
 </form>
+
+<input
+    type="text"
+    light:model.live="searchUsers"
+    light:model="search"
+    light:debounce="300"
+    placeholder="Search without form"
+/>
 ```
 
 ---
@@ -226,6 +239,8 @@ Triggers a **server-side** action on click. Sends current state and receives upd
 <!-- Inside light:for, use item properties -->
 <button light:click="deleteUser(user.id)">Delete</button>
 ```
+
+Even when action arguments are passed, current `light:model` state is also hydrated into `Request`, so inside action methods you can directly use `$request->fieldName` and `$request->validate([...])`.
 
 #### `light:submit`
 
