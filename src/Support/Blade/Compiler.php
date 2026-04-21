@@ -106,7 +106,26 @@ class Compiler
         $view = preg_replace('/\{\{\s*echo\.([A-Za-z_][A-Za-z0-9_\.\-\>]*)\s*\}\}/', '<span data-light-text="$1"></span>', $view);
         $view = preg_replace('/\{\{\s*light\.([A-Za-z_][A-Za-z0-9_\.\-\>]*)\s*\}\}/', '<span data-light-text="$1"></span>', $view);
 
-        // Transform {{ light(...) }} into reactive expression spans.
+        // Attribute-context transform for {{ light(...) }}.
+        // Example:
+        //   class="{{ light(isActive ? 'text-green-600' : 'text-red-600') }}"
+        // becomes:
+        //   data-light-attr-class="isActive ? 'text-green-600' : 'text-red-600'"
+        //
+        // This keeps class/attribute bindings reactive and avoids invalid HTML
+        // that would occur if we injected a <span> inside an attribute value.
+        $view = preg_replace_callback('/([A-Za-z_:][-A-Za-z0-9_:.]*)\s*=\s*"\s*\{\{\s*light\((.*?)\)\s*\}\}\s*"/s', function ($match) {
+            $attrName = strtolower(trim((string) ($match[1] ?? '')));
+            $expr = trim((string) ($match[2] ?? ''));
+
+            if ($expr === '') {
+                return 'data-light-attr-' . $attrName . '=""';
+            }
+
+            return 'data-light-attr-' . $attrName . '="' . htmlspecialchars($expr, ENT_QUOTES, 'UTF-8') . '"';
+        }, $view);
+
+        // Transform remaining {{ light(...) }} into reactive expression spans.
         // Example:
         //   {{ light(name ? name : 'na') }}
         // becomes:

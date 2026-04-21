@@ -8,7 +8,7 @@
     <img src="https://img.shields.io/badge/Laravel-11%20%7C%2012%20%7C%2013-red" alt="Laravel">
     <img src="https://img.shields.io/badge/PHP-8.2%2B-blue" alt="PHP">
     <img src="https://img.shields.io/badge/License-MIT-green" alt="License">
-    <img src="https://img.shields.io/badge/Version-1.3.74-purple" alt="Version">
+    <img src="https://img.shields.io/badge/Version-1.3.75-purple" alt="Version">
   </p>
 </p>
 

@@ -1894,6 +1894,14 @@
             el.setAttribute('data-light-click', resolveScopedAction(action));
         });
 
+        scopedElements('[data-light-loading-target]').forEach((el) => {
+            let target = el.getAttribute('data-light-loading-target');
+            if (!target) return;
+
+            let resolved = resolveScopedAction(target);
+            el.setAttribute('data-light-loading-target', resolved);
+        });
+
         scopedElements('[data-light-function]').forEach((el) => {
             let expr = el.getAttribute('data-light-function');
             if (!expr) return;
@@ -2946,6 +2954,7 @@
         if (!patchData || typeof patchData !== 'object') return false;
 
         let anyDirty = false;
+        let paginatorResourcesToSync = [];
 
         Object.entries(patchData).forEach(([resource, actions]) => {
             if (!actions || typeof actions !== 'object') return;
@@ -2954,8 +2963,12 @@
 
             let targetArray = api.state[resource];
             let isPaginator = false;
+            let paginatorState = null;
+            let insertCount = 0;
+            let deleteCount = 0;
 
             if (targetArray && typeof targetArray === 'object' && !Array.isArray(targetArray) && 'data' in targetArray && 'current_page' in targetArray) {
+                paginatorState = targetArray;
                 targetArray = targetArray.data;
                 isPaginator = true;
             }
@@ -2971,6 +2984,7 @@
             // --- DELETE (bare IDs) ---
             if (Array.isArray(actions.delete) && actions.delete.length) {
                 let deleteIds = new Set(actions.delete.map(id => String(id)));
+                deleteCount = deleteIds.size;
                 targetArray = targetArray.filter(item => {
                     let id = findPatchItemId(item);
                     if (id === undefined || id === null) return true;
@@ -3007,6 +3021,7 @@
             if (Array.isArray(actions.insert) && actions.insert.length) {
                 let insertItems = actions.insert.filter(item => item && typeof item === 'object');
                 if (insertItems.length) {
+                    insertCount = insertItems.length;
                     let insertIds = new Set(
                         insertItems
                             .map(item => findPatchItemId(item))
@@ -3029,6 +3044,24 @@
             if (resourceDirty) {
                 if (isPaginator) {
                     api.state[resource] = { ...api.state[resource], data: targetArray };
+
+                    if (paginatorState && (insertCount > 0 || deleteCount > 0)) {
+                        let perPage = Number(paginatorState.per_page || targetArray.length || 10);
+                        let currentPage = Number(paginatorState.current_page || 1);
+                        let totalBefore = Number(paginatorState.total || 0);
+                        let totalAfter = Math.max(0, totalBefore + insertCount - deleteCount);
+                        let lastPageAfter = Math.max(1, Math.ceil(totalAfter / Math.max(1, perPage)));
+                        let safePage = Math.min(Math.max(1, currentPage), lastPageAfter);
+
+                        api.state[resource] = {
+                            ...api.state[resource],
+                            total: totalAfter,
+                            last_page: lastPageAfter,
+                            current_page: safePage,
+                        };
+
+                        paginatorResourcesToSync.push({ resource, page: safePage });
+                    }
                 } else {
                     api.state[resource] = targetArray;
                 }
@@ -3042,6 +3075,29 @@
                 anyDirty = true;
             }
         });
+
+        if (paginatorResourcesToSync.length) {
+            let deduped = new Map();
+            paginatorResourcesToSync.forEach((entry) => {
+                deduped.set(entry.resource, entry);
+            });
+
+            deduped.forEach(({ resource, page }) => {
+                let paginateEl = document.querySelector('[data-light-paginate="' + resource + '"]');
+                let actionName = paginateEl
+                    ? (paginateEl.getAttribute('data-light-paginate-action') || '')
+                    : '';
+
+                if (!actionName) {
+                    return;
+                }
+
+                call(actionName, { page }, {
+                    debounceKey: `paginate-sync:${resource}`,
+                    cancelKey: `paginate-sync:${resource}`,
+                });
+            });
+        }
 
         return anyDirty;
     }
@@ -3180,8 +3236,13 @@
             let target = el.getAttribute('data-light-loading-target') || '';
             
             // If this element has a target, only activate it for matching action
-            if (target && actionName && target !== actionName) {
-                return;
+            if (target) {
+                let matchesAction = !!actionName && target === actionName;
+                let matchesActionId = !!actionId && target === actionId;
+
+                if (!matchesAction && !matchesActionId) {
+                    return;
+                }
             }
 
             let delayMs = parseInt(el.getAttribute('data-light-loading-delay') || '0', 10) || 0;
