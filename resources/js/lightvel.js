@@ -415,6 +415,25 @@
     function initJsState(scope = document) {
         let api = getJsApi();
 
+        scope.querySelectorAll('[data-light-cloak-repeat]').forEach((el) => {
+            if (el.getAttribute('data-light-cloak-repeat-processed') === '1') {
+                return;
+            }
+
+            let count = parseInt(el.getAttribute('data-light-cloak-repeat') || '1', 10);
+            if (isNaN(count) || count < 1) {
+                count = 1;
+            }
+
+            el.setAttribute('data-light-cloak-repeat-processed', '1');
+
+            for (let i = 1; i < count; i++) {
+                let clone = el.cloneNode(true);
+                clone.setAttribute('data-light-cloak-repeat-processed', '1');
+                el.parentNode?.insertBefore(clone, el.nextSibling);
+            }
+        });
+
         scope.querySelectorAll('[data-light-state]').forEach((el) => {
             let rawState = el.getAttribute('data-light-state');
             if (!rawState) return;
@@ -2954,7 +2973,6 @@
         if (!patchData || typeof patchData !== 'object') return false;
 
         let anyDirty = false;
-        let paginatorResourcesToSync = [];
 
         Object.entries(patchData).forEach(([resource, actions]) => {
             if (!actions || typeof actions !== 'object') return;
@@ -3036,6 +3054,44 @@
                     });
 
                     targetArray = [...insertItems, ...rest];
+
+                    if (isPaginator && paginatorState) {
+                        let perPage = Number(paginatorState.per_page || targetArray.length || 10);
+                        targetArray = targetArray.slice(0, Math.max(1, perPage));
+                    }
+
+                    resourceDirty = true;
+                }
+            }
+
+            // --- FILL (optional helper items for paginator delete) ---
+            // Server can include actions.fill to keep page length stable after delete
+            // without making a second AJAX request.
+            if (isPaginator && Array.isArray(actions.fill) && actions.fill.length) {
+                let perPage = Number(paginatorState?.per_page || targetArray.length || 10);
+                if (targetArray.length < perPage) {
+                    let existingIds = new Set(
+                        targetArray
+                            .map(item => findPatchItemId(item))
+                            .filter(id => id !== undefined && id !== null)
+                            .map(id => String(id))
+                    );
+
+                    actions.fill.forEach((item) => {
+                        if (!item || typeof item !== 'object') return;
+                        if (targetArray.length >= perPage) return;
+
+                        let id = findPatchItemId(item);
+                        if (id !== undefined && id !== null && existingIds.has(String(id))) {
+                            return;
+                        }
+
+                        targetArray.push(item);
+                        if (id !== undefined && id !== null) {
+                            existingIds.add(String(id));
+                        }
+                    });
+
                     resourceDirty = true;
                 }
             }
@@ -3059,8 +3115,6 @@
                             last_page: lastPageAfter,
                             current_page: safePage,
                         };
-
-                        paginatorResourcesToSync.push({ resource, page: safePage });
                     }
                 } else {
                     api.state[resource] = targetArray;
@@ -3075,29 +3129,6 @@
                 anyDirty = true;
             }
         });
-
-        if (paginatorResourcesToSync.length) {
-            let deduped = new Map();
-            paginatorResourcesToSync.forEach((entry) => {
-                deduped.set(entry.resource, entry);
-            });
-
-            deduped.forEach(({ resource, page }) => {
-                let paginateEl = document.querySelector('[data-light-paginate="' + resource + '"]');
-                let actionName = paginateEl
-                    ? (paginateEl.getAttribute('data-light-paginate-action') || '')
-                    : '';
-
-                if (!actionName) {
-                    return;
-                }
-
-                call(actionName, { page }, {
-                    debounceKey: `paginate-sync:${resource}`,
-                    cancelKey: `paginate-sync:${resource}`,
-                });
-            });
-        }
 
         return anyDirty;
     }
@@ -3200,7 +3231,17 @@
             if (k.startsWith('__')) return;
             // Skip patched resources — their stale data from getDeltaState
             // would overwrite the freshly patched client-side array.
-            if (patchedResources.has(k)) return;
+            if (patchedResources.has(k)) {
+                let isFreshPaginator = v
+                    && typeof v === 'object'
+                    && !Array.isArray(v)
+                    && Array.isArray(v.data)
+                    && Object.prototype.hasOwnProperty.call(v, 'current_page');
+
+                if (!isFreshPaginator) {
+                    return;
+                }
+            }
             api.state[k] = v;
         });
 

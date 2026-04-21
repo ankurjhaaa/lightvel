@@ -132,6 +132,13 @@ class Compiler
         //   <span data-light-text-expr="name ? name : 'na'"></span>
         $view = preg_replace_callback('/\{\{\s*light\((.*?)\)\s*\}\}/s', function ($match) {
             $expr = trim((string) ($match[1] ?? ''));
+
+            // Allow quoted expressions to avoid PHP analyzer warnings in Blade,
+            // e.g. {{ light('editingId ? "Edit" : "Create"') }}.
+            if ((str_starts_with($expr, "'") && str_ends_with($expr, "'")) || (str_starts_with($expr, '"') && str_ends_with($expr, '"'))) {
+                $expr = trim(substr($expr, 1, -1));
+            }
+
             if ($expr === '') {
                 return '<span data-light-text-expr=""></span>';
             }

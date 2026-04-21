@@ -8,7 +8,7 @@
     <img src="https://img.shields.io/badge/Laravel-11%20%7C%2012%20%7C%2013-red" alt="Laravel">
     <img src="https://img.shields.io/badge/PHP-8.2%2B-blue" alt="PHP">
     <img src="https://img.shields.io/badge/License-MIT-green" alt="License">
-    <img src="https://img.shields.io/badge/Version-1.3.75-purple" alt="Version">
+    <img src="https://img.shields.io/badge/Version-1.3.76-purple" alt="Version">
   </p>
 </p>
 
@@ -149,7 +149,7 @@ Every Lightvel page is a **single Blade file** containing both the PHP component
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                   Blade File                         │
+│                   Blade File                        │
 │                                                     │
 │  @php                                               │
 │    new #[Layout('app')] class extends Component {   │
@@ -786,39 +786,54 @@ Keep the loading indicator visible for at least a minimum time:
 </span>
 ```
 
-### Skeleton/Shimmer Loading
+### Skeleton Loading (Custom Markup)
 
-Use the built-in skeleton class for placeholder content:
-
-```html
-<div light:loading>
-    <div class="lightvel-skeleton" style="width:200px;height:20px"></div>
-    <div class="lightvel-skeleton" style="width:150px;height:20px;margin-top:8px"></div>
-</div>
-```
+Lightvel does not enforce a default skeleton style now. Build your own skeleton markup/classes and show it via `light:boot` or `light:cloak`.
 
 ---
 
-## Initial Page Loader (`light:cloak`)
+## Page-Load Skeleton (`light:boot`)
 
-Show a loading placeholder **until the page is fully initialized**. Cloaked elements are **visible during boot** and **hidden after JS initializes**.
-
-This is the opposite of `light:loading` — use it for initial-load skeletons:
+Use `light:boot` when you want a placeholder visible on first page load.
 
 ```html
-<!-- Skeleton: visible on page load, disappears when JS is ready -->
-<div light:cloak class="space-y-4 py-8">
-    <div class="h-8 w-48 lightvel-skeleton rounded"></div>
-    <div class="h-10 w-80 lightvel-skeleton rounded"></div>
-    <div class="h-12 w-full lightvel-skeleton rounded"></div>
-    <div class="h-12 w-full lightvel-skeleton rounded"></div>
+<div light:boot class="space-y-3">
+    <div class="h-4 rounded bg-gray-200"></div>
+    <div class="h-4 rounded bg-gray-200"></div>
 </div>
 ```
 
-| Directive | During boot | After JS init |
-|-----------|-------------|---------------|
-| `light:cloak` | ✅ Visible | ❌ Hidden |
-| `light:loading` | ❌ Hidden | ✅ Visible (during AJAX) |
+## Targeted Skeleton (`light:cloak`)
+
+`light:cloak` now behaves as a loading-driven skeleton placeholder.
+It is shown only while its loading target is active.
+
+```html
+<!-- Show custom skeleton while searchUsers runs -->
+<div light:cloak light:cloak.target="searchUsers" class="space-y-3">
+    <div class="h-4 rounded bg-gray-200"></div>
+    <div class="h-4 rounded bg-gray-200"></div>
+    <div class="h-4 rounded bg-gray-200"></div>
+</div>
+
+<!-- Repeat same skeleton card 6 times -->
+<div light:cloak light:cloak.target="searchUsers" light:cloak.repeat="6" class="rounded-lg border p-4">
+    <div class="h-5 w-1/2 rounded bg-gray-200"></div>
+    <div class="mt-3 h-4 rounded bg-gray-100"></div>
+</div>
+
+<!-- Optional delay/min support (same semantics as light:loading) -->
+<div light:cloak light:cloak.target="saveUser" light:cloak.delay="200" light:cloak.min="600">
+    <div class="h-10 rounded bg-gray-200"></div>
+</div>
+```
+
+| Modifier | Purpose |
+|----------|---------|
+| `light:cloak.target="actionName"` | Show skeleton only for that action |
+| `light:cloak.repeat="N"` | Duplicate skeleton block N times |
+| `light:cloak.delay="ms"` | Show skeleton only after delay |
+| `light:cloak.min="ms"` | Keep skeleton visible for minimum time |
 
 ---
 
