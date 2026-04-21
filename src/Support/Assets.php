@@ -16,7 +16,7 @@ namespace Lightvel\Support;
  *   - data-light-booting attribute is set on <html> and removed after init
  *
  * @see \Lightvel\Support\Blade\Directives::register() — registers @lightScripts
- * @see resources/js/lightvel.js — last line removes data-light-booting
+ * @see resources/js/lightvel.js — initJsState() removes data-light-booting after boot sync
  */
 class Assets
 {
@@ -64,7 +64,7 @@ class Assets
         //   - light:if/light:show elements flashing visible before condition is evaluated
         //   - light:for templates showing the raw template row before list is rendered
         //   - light:text empty spans showing blank before state is initialized
-        // The data-light-booting attribute is removed by lightvel.js after initJsState()
+        // The data-light-booting attribute is removed by lightvel.js in initJsState() after initial sync
         $bootStyles = '<style>'
             . '[data-light-booting] [data-light-if],'
             . '[data-light-booting] [data-light-show],'
@@ -81,6 +81,11 @@ class Assets
             . '[data-light-booting] [data-light-cloak]{display:block !important;}'
             // Also allow cloak skeleton to appear when actively loading (optional)
             . '[data-light-cloak][data-light-loading-active="true"]{display:block !important;}'
+            // Hide real content while boot cloak is visible
+            . '[data-light-booting] [data-light-cloak-remove]{display:none !important;}'
+            // Hide real content while target cloak/loading is active
+            . '[data-light-loading-active="true"] ~ [data-light-cloak-remove],'
+            . '[data-light-cloak-remove][data-light-loading-active="true"]{display:none !important;}'
             // Default spinner — use class="lightvel-spinner" for a built-in spinner
             . '@keyframes lightvel-spin{to{transform:rotate(360deg)}}'
             . '.lightvel-spinner{display:inline-block;width:20px;height:20px;'

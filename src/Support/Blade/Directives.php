@@ -45,9 +45,9 @@ use Lightvel\Support\Assets;
  *   light:loading.delay="500"  → data-light-loading-delay      → show after delay ms
  *   light:loading.min="1000"   → data-light-loading-min        → show for at least min ms
  *   light:paginate="key"       → data-light-paginate="key"     → auto pagination controls
- *   light:boot                  → data-light-boot="true"        → page-load skeleton placeholder
  *   light:cloak.target="action" → data-light-loading-target      → targeted skeleton visibility
  *   light:cloak.repeat="N"      → data-light-cloak-repeat="N"   → duplicate skeleton block N times
+ *   light:cloak.remove          → data-light-cloak-remove         → hide real content while skeleton is active
  *
  * @lightScripts directive outputs the full JS runtime inline via Assets::scripts()
  *
@@ -191,10 +191,6 @@ class Directives
             $view = preg_replace('/light:paginate-link="([^"]+)"/', 'data-light-paginate-link="$1"', $view);
             $view = preg_replace('/light:paginate-custom(?:="([^"]*)")?/', 'data-light-paginate-custom="${1:-true}"', $view);
 
-            // --- Page-load skeleton (boot placeholder) ---
-            // light:boot is visible while data-light-booting is present, then hidden after JS init.
-            $view = preg_replace('/light:boot(?:="([^"]*)")?/', 'data-light-boot="${1:-true}"', $view);
-
             // --- Cloak skeleton directives ---
             // light:cloak.target="saveUser" → skeleton shown only for that action
             $view = preg_replace('/light:cloak\.target="([^"]+)"/', 'data-light-loading-target="$1"', $view);
@@ -203,6 +199,8 @@ class Directives
             $view = preg_replace('/light:cloak\.min="([^"]+)"/', 'data-light-loading-min="$1"', $view);
             // light:cloak.repeat="5" duplicates the skeleton block 5 times on init
             $view = preg_replace('/light:cloak\.repeat="([^"]+)"/', 'data-light-cloak-repeat="$1"', $view);
+            // light:cloak.remove hides real content while matching skeleton is visible
+            $view = preg_replace('/light:cloak\.remove/', 'data-light-cloak-remove', $view);
             // Base cloak now means loading-driven skeleton placeholder
             $view = preg_replace('/light:cloak(?:="([^"]*)")?/', 'data-light-cloak="${1:-true}" data-light-loading="true"', $view);
 

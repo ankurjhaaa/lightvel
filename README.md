@@ -788,18 +788,25 @@ Keep the loading indicator visible for at least a minimum time:
 
 ### Skeleton Loading (Custom Markup)
 
-Lightvel does not enforce a default skeleton style now. Build your own skeleton markup/classes and show it via `light:boot` or `light:cloak`.
+Lightvel does not enforce a default skeleton style. Build your own skeleton markup/classes with `light:cloak`.
 
 ---
 
-## Page-Load Skeleton (`light:boot`)
+## Page-Load Skeleton (`light:cloak`)
 
-Use `light:boot` when you want a placeholder visible on first page load.
+Use `light:cloak` without a target for first page-load skeletons.
 
 ```html
-<div light:boot class="space-y-3">
+<!-- Skeleton visible during initial boot -->
+<div light:cloak class="space-y-3">
     <div class="h-4 rounded bg-gray-200"></div>
     <div class="h-4 rounded bg-gray-200"></div>
+</div>
+
+<!-- Real content hidden while skeleton is active -->
+<div light:cloak.remove>
+    <h3>Dashboard</h3>
+    <p>Loaded content...</p>
 </div>
 ```
 
@@ -834,6 +841,7 @@ It is shown only while its loading target is active.
 | `light:cloak.repeat="N"` | Duplicate skeleton block N times |
 | `light:cloak.delay="ms"` | Show skeleton only after delay |
 | `light:cloak.min="ms"` | Keep skeleton visible for minimum time |
+| `light:cloak.remove` | Hide real content while matching cloak is active |
 
 ---
 

@@ -414,6 +414,7 @@
 
     function initJsState(scope = document) {
         let api = getJsApi();
+        let deferredServerStates = [];
 
         scope.querySelectorAll('[data-light-cloak-repeat]').forEach((el) => {
             if (el.getAttribute('data-light-cloak-repeat-processed') === '1') {
@@ -468,9 +469,7 @@
             try {
                 let serverState = JSON.parse(raw);
                 if (typeof serverState === 'object' && serverState !== null) {
-                    Object.entries(serverState).forEach(([key, value]) => {
-                        api.state[key] = value;
-                    });
+                    deferredServerStates.push(serverState);
                 }
             } catch (_) {
                 // ignore invalid server state
@@ -560,6 +559,27 @@
         });
 
         syncBindings();
+
+        let finalizeBoot = () => {
+            document.documentElement.removeAttribute('data-light-booting');
+            renderErrors(getJsApi().errors || {});
+        };
+
+        if (deferredServerStates.length) {
+            requestAnimationFrame(() => {
+                deferredServerStates.forEach((serverState) => {
+                    Object.entries(serverState).forEach(([key, value]) => {
+                        api.state[key] = value;
+                    });
+                });
+
+                syncBindings();
+                finalizeBoot();
+            });
+            return;
+        }
+
+        finalizeBoot();
     }
 
     function getRootRules() {
@@ -3293,7 +3313,7 @@
             let toggleRemove = (show) => {
                 let parent = el.parentElement;
                 if (!parent) return;
-                parent.querySelectorAll('[data-light-loading-remove]').forEach(rem => {
+                parent.querySelectorAll('[data-light-loading-remove], [data-light-cloak-remove]').forEach(rem => {
                     rem.style.display = show ? '' : 'none';
                 });
             };
@@ -3463,9 +3483,6 @@
                 // 8. Initialize Component State and DOM bindings for the newly injected HTML
                 initJsState(document);
                 syncBindings();
-
-                // 9. Un-hide elements previously hidden by bootStyles (since JS is now ready)
-                document.documentElement.removeAttribute('data-light-booting');
             })
             .catch((err) => {
                 console.error('[Lightvel] SPA Navigate Error:', err);
@@ -3845,10 +3862,8 @@
     // =======================================================================
     // INITIALIZATION — runs immediately (script is placed before </body>)
     // 1. Read all data-light-server-state and data-light-state into api.state
-    // 2. Remove data-light-booting to unhide reactive elements (FOUC fix)
+    // 2. Boot finalization happens inside initJsState() after deferred state hydration
     // 3. Render any existing validation errors
     // =======================================================================
     initJsState(document);
-    document.documentElement.removeAttribute('data-light-booting');
-    renderErrors(getJsApi().errors || {});
 })();
