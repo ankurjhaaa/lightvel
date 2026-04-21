@@ -46,6 +46,9 @@
     let __loadingMinEndTimes = new Map(); // el → timestamp when min expires
     let __loadingStartTime = 0;
     let __currentActionId = null; // Full action call e.g. "deleteUser(5)" for per-instance loading
+    let __navigateCache = new Map(); // url -> { type, payload, cachedAt }
+    let __navigateInFlight = new Map(); // url -> Promise<{ type, payload }>
+    let __NAVIGATE_CACHE_TTL = 30000;
 
     function getConfig() {
         return window.Lightvel || {};
@@ -3388,29 +3391,31 @@
         return true;
     }
 
-    function navigateTo(url, options = {}) {
-        let targetUrl = url;
-        let currentUrl = window.location.href.split('#')[0];
+    function normalizeNavigateUrl(url) {
+        try {
+            let parsed = new URL(url, window.location.href);
+            return parsed.origin + parsed.pathname + parsed.search;
+        } catch (_) {
+            return String(url || '').split('#')[0];
+        }
+    }
 
-        if (targetUrl.indexOf('#') !== -1 && targetUrl.split('#')[0] === currentUrl) {
-            window.location.hash = targetUrl.split('#')[1];
-            return;
+    function fetchNavigatePayload(targetUrl) {
+        let normalized = normalizeNavigateUrl(targetUrl);
+        if (!normalized) {
+            return Promise.reject(new Error('Invalid navigate URL'));
         }
 
-        // React-like feel: switch route state first, then hydrate fetched HTML/state.
-        if (!options.fromPop) {
-            if (options.replace) {
-                history.replaceState({}, '', targetUrl);
-            } else {
-                history.pushState({}, '', targetUrl);
-            }
+        let cached = __navigateCache.get(normalized);
+        if (cached && (Date.now() - cached.cachedAt) < __NAVIGATE_CACHE_TTL) {
+            return Promise.resolve({ type: cached.type, payload: cached.payload });
         }
 
-        // Keep cloak skeletons visible while navigation fetch + hydration is in-flight.
-        document.documentElement.setAttribute('data-light-booting', 'true');
-        startProgress();
+        if (__navigateInFlight.has(normalized)) {
+            return __navigateInFlight.get(normalized);
+        }
 
-        fetch(targetUrl, {
+        let req = fetch(targetUrl, {
             method: 'GET',
             headers: {
                 'X-Light-Navigate': 'true',
@@ -3430,12 +3435,60 @@
                 return { type: 'html', payload: await r.text() };
             })
             .then((result) => {
+                __navigateCache.set(normalized, {
+                    type: result.type,
+                    payload: result.payload,
+                    cachedAt: Date.now(),
+                });
+
+                return result;
+            })
+            .finally(() => {
+                __navigateInFlight.delete(normalized);
+            });
+
+        __navigateInFlight.set(normalized, req);
+        return req;
+    }
+
+    function prefetchNavigate(url) {
+        if (!url || !isSameOrigin(url)) return;
+
+        fetchNavigatePayload(url).catch(() => {
+            // Ignore prefetch errors silently.
+        });
+    }
+
+    function navigateTo(url, options = {}) {
+        let targetUrl = url;
+        let currentUrl = window.location.href.split('#')[0];
+
+        if (targetUrl.indexOf('#') !== -1 && targetUrl.split('#')[0] === currentUrl) {
+            window.location.hash = targetUrl.split('#')[1];
+            return;
+        }
+
+        // React-like feel: switch route state first, then hydrate fetched HTML/state.
+        if (!options.fromPop) {
+            if (options.replace) {
+                history.replaceState({}, '', targetUrl);
+            } else {
+                history.pushState({}, '', targetUrl);
+            }
+        }
+        startProgress();
+
+        fetchNavigatePayload(targetUrl)
+            .then((result) => {
                 if (result.type === 'json') {
                     update(result.payload);
                     return;
                 }
 
                 // Smooth SPA HTML navigation!
+                // Set booting only when we are about to swap new HTML,
+                // so current page does not go blank during network wait.
+                document.documentElement.setAttribute('data-light-booting', 'true');
                 let parser = new DOMParser();
                 let doc = parser.parseFromString(result.payload, 'text/html');
 
@@ -3679,6 +3732,28 @@
         e.preventDefault();
         navigateTo(link.href);
     });
+
+    // Next.js-like prefetch: warm navigation response on intent (hover/focus/touch).
+    document.addEventListener('mouseover', (e) => {
+        let link = e.target.closest('a[data-light-navigate]');
+        if (!link || !link.href) return;
+
+        let from = e.relatedTarget;
+        if (from && from.nodeType === 1 && link.contains(from)) return;
+        prefetchNavigate(link.href);
+    });
+
+    document.addEventListener('focusin', (e) => {
+        let link = e.target.closest('a[data-light-navigate]');
+        if (!link || !link.href) return;
+        prefetchNavigate(link.href);
+    });
+
+    document.addEventListener('touchstart', (e) => {
+        let link = e.target.closest('a[data-light-navigate]');
+        if (!link || !link.href) return;
+        prefetchNavigate(link.href);
+    }, { passive: true });
 
     // Handle browser back/forward buttons for SPA navigation
     window.addEventListener('popstate', () => {
