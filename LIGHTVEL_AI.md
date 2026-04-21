@@ -1,46 +1,48 @@
-# LIGHTVEL_AI.md — AI Agent Reference Guide
+# LIGHTVEL_AI.md — AI Implementation Guide (Latest)
 
-> **This file is for AI assistants and agentic coding tools.**
-> When a developer asks an AI to build features with Lightvel, share this file as context.
-> It contains everything an AI needs to generate correct, optimized Lightvel code.
-
----
-
-## What is Lightvel?
-
-Lightvel is a reactive Laravel package. You define a component class + HTML template in a **single Blade file**. No npm, no build step, no separate JS files. Everything is Blade + PHP.
-
-This guide reflects **Lightvel v1.3.74** behavior.
+This file is the authoritative reference for AI assistants generating Lightvel code.
+It is aligned with the latest runtime/directive behavior.
 
 ---
 
-## File Structure
+## 1) Core Model
 
-```
-resources/views/
-├── layouts/
-│   └── app.blade.php          ← Layout with @lightScripts
-└── pages/
-    └── your-page.blade.php    ← Component file (class + template)
+Lightvel is a server-driven reactive layer for Laravel Blade:
+- One Blade file contains component class + markup.
+- Initial page render returns HTML.
+- Interactions return JSON state (and optional `__patch`) over AJAX.
+- Runtime updates DOM bindings (`light:text`, `light:for`, etc.) client-side.
 
-routes/web.php                 ← Route::lightvel('/url', 'pages.your-page');
-```
+No npm/build step is required.
 
 ---
 
-## How to Create a Page
+## 2) Required Layout Contract
 
-### Step 1: Route
+Every layout used by Lightvel pages should include:
+- CSRF token meta
+- `@lightScripts` before `</body>`
 
-```php
-// routes/web.php
-Route::lightvel('/users', 'pages.users');
-Route::lightvel('/product/{id}', 'pages.product');  // dynamic params
+```blade
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <title>{{ $title ?? 'App' }}</title>
+</head>
+<body>
+  {!! $slot !!}
+  @lightScripts
+</body>
+</html>
 ```
 
-### Step 2: Blade File
+Without `@lightScripts`, directives render as static HTML and no reactivity runs.
 
-Every Lightvel page has this exact structure:
+---
+
+## 3) Component Skeleton
 
 ```blade
 @php
@@ -48,415 +50,217 @@ use Lightvel\Component;
 use Illuminate\Http\Request;
 
 new #[Layout('app')] class extends Component {
-
-    // INITIAL STATE — runs only on first page load (GET request).
-    // Returns an array of key-value pairs that become reactive state.
-    // This method is SKIPPED on AJAX action calls for performance.
-    // Route params are passed as arguments: lightvel($id) for /product/{id}
     public function lightvel(): array
     {
         return [
-            'items' => Item::latest()->limit(20)->get(),
+            'users' => \App\Models\User::latest()->paginate(10),
             'search' => '',
             'showModal' => false,
             'message' => '',
         ];
     }
 
-    // ACTION METHOD — called via AJAX when user clicks/submits.
-    // Receives Request with form data. Returns array to update client state.
-    public function saveItem(Request $request): array
+    public function searchUsers(Request $request): array
     {
-        $validated = $request->validate([
-            'name' => 'required|min:3',
-        ]);
+        $search = (string) $request->input('search', '');
+        $page = max(1, (int) $request->input('page', 1));
 
-        $item = Item::create($validated);
+        $query = \App\Models\User::query()->latest();
+        if ($search !== '') {
+            $query->where('name', 'like', "%{$search}%");
+        }
 
+        return ['users' => $query->paginate(10, ['*'], 'page', $page)];
+    }
+};
+@endphp
+```
+
+---
+
+## 4) `light:model.live` (Important Latest Behavior)
+
+`light:model.live` no longer auto-submits nearest form.
+
+### Rules
+
+1. It always updates model state (same as `light:model`).
+2. It triggers an action **only** if the value is an explicit action name.
+3. If value is missing / same as field name / not intended as action, it behaves like plain `light:model`.
+4. Manual form submit still controls validation + save actions.
+
+### Correct pattern
+
+```blade
+<form light:submit="saveUser">
+  <input light:model="email" light:model.live="email" />
+  <button type="submit">Save</button>
+</form>
+
+<input light:model="search" light:model.live="searchUsers" light:debounce="300" />
+```
+
+- First input: no live action call, only model sync.
+- Second input: calls `searchUsers` with debounce.
+
+---
+
+## 5) Directive Reference (Practical)
+
+### Data / Output
+- `light:model="key"`
+- `light:model.live="actionName"`
+- `light:text="expr"`
+- `light:bind="key"` (alias of text)
+- `light:html="key"`
+- `light:src="expr"`
+- `{{ light.key }}`
+- `{{ light("expression") }}` (use string form to avoid PHP analyzer warnings)
+
+### Actions
+- `light:click="method(args)"`
+- `light:submit="method"`
+- `light:change="method(...)"`
+- `light:input="method(...)"`
+- `light:function="a=1, showModal=true"` (client-only; no server trip)
+
+### Conditional / Attr
+- `light:if="expr"`
+- `light:show="expr"`
+- `light:class="{...}"`
+- `light:attr.NAME="expr"`
+
+### Repetition
+- `light:for="item in items"`
+
+### Validation
+- `light:rules="required|min:3"`
+- `light:error="field"`
+- `light:error-message="custom text"`
+
+### Loading / Skeleton
+- `light:loading`
+- `light:loading.target="actionName"`
+- `light:loading.delay="300"`
+- `light:loading.min="800"`
+- `light:loading.remove`
+
+- `light:cloak` => boot-only skeleton (first load)
+- `light:cloak.target="actionName"` => action-time skeleton enabled
+- `light:cloak.repeat="N"`
+- `light:cloak.delay="ms"`
+- `light:cloak.min="ms"`
+- `light:cloak.remove`
+
+### Navigation / Pagination
+- `light:navigate`
+- `light:paginate="users"`
+- `light:paginate-action="searchUsers"`
+- `light:paginate-custom`
+
+### Array / JSON Utilities
+- `light:array`, `light:array.add`, `light:array.check`, `light:array.all`
+- `light:json.add`, `light:json.remove`, `light:json.check`
+
+---
+
+## 6) Patch Operations (Use by Default for CRUD)
+
+Prefer patch ops to avoid full list refetch:
+
+```php
+return [...patch()->insert('users', $user)];
+return [...patch()->update('users', $user)];
+return [...patch()->delete('users', $id)];
+```
+
+Patch keeps UI responsive and avoids replacing entire arrays.
+
+---
+
+## 7) Navigation Behavior (Latest)
+
+`light:navigate` uses SPA-style fetch + DOM swap and includes intent prefetch:
+- prefetch on hover/focus/touch
+- response cache + in-flight dedupe
+- progress bar during navigation
+
+Use `light:function` for immediate UI shell toggles when needed; use `light:navigate` for route transitions.
+
+---
+
+## 8) Performance Rules for AI
+
+1. Use `light:function` for UI-only operations (modal/tabs/open-close).
+2. Use `light:click` only when server/data change is required.
+3. Debounce live search inputs (`light:debounce="250"` or `300`).
+4. Prefer `patch()` for CRUD responses.
+5. Keep `lightvel()` initial payload small.
+6. Use `light:cloak` + `light:cloak.remove` for first-load UX.
+7. For action-time skeletons, always add `light:cloak.target`.
+
+---
+
+## 9) Common Mistakes (Avoid)
+
+- Using `light:model.live="field"` expecting form auto-submit (no longer true).
+- Omitting `light:model` with `light:model.live` on the same input.
+- Returning full large collections after small CRUD changes instead of `patch()`.
+- Using unquoted `{{ light(condition ? 'a' : 'b') }}` in editors that flag PHP constants.
+  Prefer: `{{ light("condition ? 'a' : 'b'") }}`.
+- Expecting `light:cloak` to run for every action without `light:cloak.target`.
+
+---
+
+## 10) Minimal AI-Generated Page Template
+
+```blade
+@php
+use Lightvel\Component;
+use Illuminate\Http\Request;
+
+new #[Layout('app')] class extends Component {
+    public function lightvel(): array
+    {
         return [
-            'showModal' => false,
-            'message' => 'Item created!',
-            ...patch()->insert('items', $item),  // Surgical DOM update
+            'query' => '',
+            'items' => \App\Models\Item::latest()->paginate(10),
         ];
     }
 
-    public function deleteItem(int $id): array
+    public function searchItems(Request $request): array
     {
-        Item::find($id)?->delete();
+        $query = (string) $request->input('query', '');
+        $page = max(1, (int) $request->input('page', 1));
 
-        return [
-            'message' => 'Item deleted!',
-            ...patch()->delete('items', $id),
-        ];
+        $q = \App\Models\Item::query()->latest();
+        if ($query !== '') {
+            $q->where('name', 'like', "%{$query}%");
+        }
+
+        return ['items' => $q->paginate(10, ['*'], 'page', $page)];
     }
 };
 @endphp
 
-{{-- HTML template with light:* directives --}}
-<div light:state="items=[], search='', showModal=false, message=''">
-    <button light:function="showModal=true">New Item</button>
-    <span light:text="message"></span>
+<div light:state="query='', items=[]">
+    <input light:model="query" light:model.live="searchItems" light:debounce="300" />
 
-    <div light:for="item in items">
-        <span light:text="item.name"></span>
-        <button light:click="deleteItem(item.id)">Delete</button>
+    <div light:cloak class="space-y-2">
+        <div class="h-4 rounded bg-gray-200"></div>
+        <div class="h-4 rounded bg-gray-200"></div>
     </div>
 
-    <div light:if="showModal">
-        <form light:submit="saveItem">
-            <input light:model="name" light:rules="required|min:3" />
-            <span light:error="name"></span>
-            <button type="submit">Save</button>
-            <button type="button" light:function="showModal=false">Cancel</button>
-        </form>
+    <div light:cloak.remove>
+        <div light:for="item in items">
+            <span light:text="item.name"></span>
+        </div>
     </div>
+
+    <div light:paginate="items" light:paginate-action="searchItems"></div>
 </div>
 ```
 
-### Step 3: Layout
-
-The layout MUST have `@lightScripts` before `</body>` and a CSRF meta tag:
-
-```html
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>{{ $title ?? 'App' }}</title>
-</head>
-<body>
-    {!! $slot !!}
-    @lightScripts
-</body>
-</html>
-```
-
 ---
 
-## Complete Directive Reference
-
-### Data Binding (two-way)
-
-| Directive | Purpose | Example |
-|-----------|---------|---------|
-| `light:model="key"` | Sync input value with state | `<input light:model="name" />` |
-| `light:model.live="fieldName"` | Update model and trigger nearest parent form submit action | `<input light:model.live="search" light:debounce="300" />` |
-| `light:model.live="actionName"` | Update model and directly call action (form not required) | `<input light:model="search" light:model.live="searchUsers" light:debounce="300" />` |
-
-### Server Actions (AJAX call to PHP)
-
-| Directive | Purpose | Example |
-|-----------|---------|---------|
-| `light:click="method(args)"` | Call PHP method on click | `<button light:click="delete(item.id)">` |
-| `light:submit="method"` | Call PHP method on form submit | `<form light:submit="saveUser">` |
-
-### Client-Side Actions (NO server call — instant)
-
-| Directive | Purpose | Example |
-|-----------|---------|---------|
-| `light:function="key=value"` | Set state instantly on client | `<button light:function="showModal=true">` |
-
-### Image Upload Preview
-
-| Directive | Purpose | Example |
-|-----------|---------|---------|
-| `light:image="previewKey, savedKey"` | Clickable image card with temporary file preview | `<div light:image="logo_preview_url, logo_url">` |
-
-Use `light:image` for logo/avatar editors where the image itself should open the picker.
-The selected file should appear immediately in the preview area, and the upload remains temporary until save.
-
-### Array Selection Utilities
-
-| Directive | Purpose | Example |
-|-----------|---------|---------|
-| `light:array="key"` | Ensure array state exists | `<div light:array="selected_ids">` |
-| `light:array.add="array, value"` | Toggle value in selection array | `<td light:array.add="selected_ids, Number(row.id)">` |
-| `light:array.check="array, value"` | Check membership | `<input light:array.check="selected_ids, Number(row.id)">` |
-| `light:array.check="array, value, 'on', 'off'"` | Membership + class toggle | `<tr light:array.check="selected_ids, Number(row.id), 'bg-teal-50', 'bg-white'">` |
-| `light:array.all="array, list, idKey"` | Fill array from list | `<button light:array.all="selected_ids, users, id">Select All</button>` |
-
-### JSON Utilities
-
-| Directive | Purpose | Example |
-|-----------|---------|---------|
-| `light:json.add="path, value"` | Append object/value to JSON array path | `<button light:json.add="subjects_json, {name:'', max_marks:100}">+ Add</button>` |
-| `light:json.remove="path, target, 'index'"` | Remove by index | `<button light:json.remove="subjects_json, $index, 'index'">Delete</button>` |
-| `light:json.remove="path, target, 'value'"` | Remove by value/object | `<button light:json.remove="subjects_json, subject, 'value'">Delete</button>` |
-| `light:json.remove="'a.b.c'"` | Delete dot-path key directly | `<button light:json.remove="'profile.meta.city'">Remove</button>` |
-| `light:json.check="path, yes, no"` | Dot-path existence check + output | `<span light:json.check="'profile.meta.city', 'SET', 'MISSING'"></span>` |
-| `light:json.check="path, yes, no, trueClass, falseClass"` | Existence + output + class toggle | `<span light:json.check="'profile.meta.city', 'SET', 'MISSING', 'text-green-600', 'text-red-600'"></span>` |
-
-> **CRITICAL FOR AI:** Use `light:function` for UI toggles (modals, tabs, dropdowns). Use `light:click` ONLY when you need the server (DB operations). This is the key to fast UX.
-
-### Conditional Rendering
-
-| Directive | Purpose | Example |
-|-----------|---------|---------|
-| `light:if="expr"` | Show/hide element | `<div light:if="showModal">` |
-| `light:show="expr"` | Same as light:if | `<div light:show="isLoading">` |
-| `light:class="obj"` | Conditional CSS classes | `<div light:class="{'active': isActive}">` |
-| `light:attr.name="expr"` | Reactive attribute binding for any attribute | `<button light:attr.disabled="isSaving">` |
-
-### List Rendering
-
-| Directive | Purpose | Example |
-|-----------|---------|---------|
-| `light:for="item in items"` | Loop over array | `<tr light:for="user in users">` |
-
-Inside `light:for`, you can access:
-- `item.property` — item fields
-- `$index` — zero-based index
-- Use `light:text`, `light:click`, `light:function` with item properties
-
-### Text/HTML Output
-
-| Directive | Purpose | Example |
-|-----------|---------|---------|
-| `light:text="expr"` | Bind text content | `<span light:text="user.name">` |
-| `light:html="key"` | Bind raw HTML | `<div light:html="content">` |
-| `light:bind="key"` | Alias for light:text | `<span light:bind="status">` |
-| `light:src="expr"` | Bind image/iframe src attribute | `<img light:src="logo_url">` |
-| `{{ light.key }}` | Mustache syntax | `Hello, {{ light.name }}!` |
-| `{{ light(expression) }}` | Reactive expression output with ternary/logic | `{{ light(name ? name : 'na') }}` |
-
-### Validation
-
-| Directive | Purpose | Example |
-|-----------|---------|---------|
-| `light:rules="rules"` | Client-side validation | `<input light:rules="required\|email">` |
-| `light:error="field"` | Show error message | `<span light:error="email">` |
-
-Supported rules: `required`, `email`, `numeric`, `min:N`, `max:N`
-
-Nested array validation keys can be handled in both forms:
-- `subjects_json.0.name`
-- `subjects_json[0].name`
-
-### State Initialization
-
-| Directive | Purpose | Example |
-|-----------|---------|---------|
-| `light:state="..."` | Init client state | `<div light:state="count=0, name=''">` |
-| `light:const="..."` | Read-only constants | `<div light:const="maxItems=100">` |
-| `light:debounce="ms"` | Delay action | `<input light:debounce="300">` |
-
-### Navigation & Loading
-
-| Directive | Purpose | Example |
-|-----------|---------|---------|
-| `light:navigate` | SPA-style link | `<a href="/page" light:navigate>` |
-| `light:loading` | Show during AJAX | `<span light:loading>Loading...</span>` |
-| `light:loading.delay="ms"` | Show only after delay | `<span light:loading light:loading.delay="300">` |
-| `light:loading.min="ms"` | Show for minimum time | `<span light:loading light:loading.min="1000">` |
-
-Built-in CSS classes: `lightvel-spinner` (circular), `lightvel-skeleton` (shimmer).
-
-### Pagination
-
-| Directive | Purpose | Example |
-|-----------|---------|---------|
-| `light:paginate="key"` | Builds base pagination | `<div light:paginate="users" light:paginate-action="loadPage">` |
-| `light:paginate-custom`| Build your own UI | `<div light:paginate="..." light:paginate-custom="true">` |
-| `light:paginate-action`| Action on page click | (Required for default) action to fetch next page |
-
-*For custom designs, use:*
-`<button light:for="link in users.links" light:click="actionName({page: Lightvel.pageFromUrl(link.url)})">...`
-
----
-
-## Patch Operations — Surgical Array Updates
-
-**ALWAYS use patch() for CRUD actions.** This avoids re-fetching the entire list.
-
-```php
-// INSERT — adds item to beginning of client array
-return [...patch()->insert('users', $newUser)];
-
-// UPDATE — merges changes into existing item (matched by id)
-return [...patch()->update('users', $updatedUser)];
-
-// DELETE — removes item from client array by id
-return [...patch()->delete('users', $id)];
-```
-
-You can combine patch with other state updates:
-
-```php
-return [
-    'showModal' => false,
-    'message' => 'User saved!',
-    'name' => '',
-    'email' => '',
-    ...patch()->insert('users', $user),
-];
-```
-
----
-
-## Common Patterns for AI
-
-### Pattern 1: CRUD Page
-
-```php
-public function lightvel(): array
-{
-    return [
-        'items' => Model::latest()->limit(20)->get(),
-        'showModal' => false,
-        'editingId' => null,
-        'name' => '',
-        'message' => '',
-    ];
-}
-
-public function save(Request $request): array
-{
-    $id = (int) $request->input('editingId');
-    $validated = $request->validate(['name' => 'required']);
-
-    if ($id > 0) {
-        $item = Model::find($id);
-        $item->update($validated);
-        return [
-            'showModal' => false, 'editingId' => null, 'name' => '',
-            'message' => 'Updated!',
-            ...patch()->update('items', $item),
-        ];
-    }
-
-    $item = Model::create($validated);
-    return [
-        'showModal' => false, 'editingId' => null, 'name' => '',
-        'message' => 'Created!',
-        ...patch()->insert('items', $item),
-    ];
-}
-
-public function delete(int $id): array
-{
-    Model::find($id)?->delete();
-    return ['message' => 'Deleted!', ...patch()->delete('items', $id)];
-}
-```
-
-### Pattern 2: Live Search
-
-```blade
-<input light:model="query" light:model.live="search" light:debounce="300" placeholder="Search..." />
-```
-
-```php
-public function search(Request $request): array
-{
-    $q = $request->input('query', '');
-    $items = Model::where('name', 'like', "%{$q}%")->limit(20)->get();
-    return ['items' => $items];
-}
-```
-
-> Alternate mode: keep `light:model.live="query"` inside a `<form light:submit="search">` if you want parent-form auto-submit style.
-
-### Pattern 3: Modal with Form
-
-```blade
-{{-- Open button (instant, no server) --}}
-<button light:function="showModal=true, editingId=null, name=''">New</button>
-
-{{-- Edit button inside light:for (pre-fills form from item data) --}}
-<button light:function="showModal=true, editingId=item.id, name=item.name">Edit</button>
-
-{{-- Modal --}}
-<div light:if="showModal">
-    <div light:function="showModal=false">{{-- backdrop --}}</div>
-    <form light:submit="save">
-        <input type="hidden" light:model="editingId" />
-        <input light:model="name" light:rules="required" />
-        <span light:error="name"></span>
-        <button type="submit">Save</button>
-        <button type="button" light:function="showModal=false">Cancel</button>
-    </form>
-</div>
-```
-
-### Pattern 4: Status Messages
-
-```blade
-<div light:if="message" class="alert">
-    <span light:text="message"></span>
-</div>
-```
-
-Always return `'message' => 'Your message'` from actions.
-
----
-
-## Rules for AI Code Generation
-
-1. **Always use `light:function` for UI-only changes** (modal open/close, tab switch, form reset). Never use `light:click` for these.
-
-2. **Always use `patch()` for CRUD returns.** Never return the full array from DB.
-
-3. **`lightvel()` must return ALL state keys** that the template uses. If the template has `light:model="name"`, then `lightvel()` must return `'name' => ''`.
-
-4. **`light:state` on the root element must mirror `lightvel()` keys.** This initializes the JS state before server state arrives.
-
-5. **Action methods return arrays.** Keys in the returned array update the corresponding client-side state. Return `(object)[]` or omit return for no-op.
-
-6. **Server validation:** Use `$request->validate()` — errors auto-display in `light:error` elements.
-
-7. **light:for items must have an `id` field** for patch operations to work correctly.
-
-8. **Layout must have `@lightScripts` before `</body>`** and `<meta name="csrf-token">` in `<head>`.
-
-9. **Route format:** `Route::lightvel('/url', 'folder.view-name');`  
-   **Dynamic params:** `Route::lightvel('/product/{id}', 'pages.product');` → `lightvel($id)`
-
-10. **After creating/modifying Blade files:** Run `php artisan view:clear` to rebuild compiled views.
-
-11. **Loading indicators:** Use `light:loading` for any element that should appear during AJAX. Use `lightvel-spinner` class for built-in spinner.
-
-12. **For dynamic JSON rows, prefer directives over long `light:function`:**
-    - Add row: `light:json.add`
-    - Remove row: `light:json.remove`
-    - Existence-based output/style: `light:json.check`
-
-13. **Prefer reactive expressions for inline prints:**
-    - Use `{{ light(name ? name : 'na') }}` for conditional print that auto-syncs.
-
-14. **Use `light:attr.*` for class/disabled/hidden/placeholder logic:**
-    - Example: `light:attr.class="status ? 'ok' : 'error'"`
-    - Example: `light:attr.disabled="isSaving || !name"`
-
-15. **`lightvel:make` now creates a minimal starter file:**
-    - No heavy sample CRUD methods.
-    - Includes essential state + template to start immediately.
-    - Injects a random Sanskrit life-wisdom line inside hidden HTML comment in generated component.
-
----
-
-## Artisan Commands
-
-```bash
-php artisan lightvel:make page-name      # Create a new page
-php artisan lightvel:layout layout-name  # Create a new layout
-php artisan lightvel:install             # Publish config + assets
-```
-
-`php artisan lightvel:make ...` starter output is intentionally minimal and includes one random Sanskrit wisdom comment line for developer delight.
-
----
-
-## JavaScript API (for advanced use)
-
-```javascript
-let api = window.Lightvel.js;
-api.get('key');              // Read state
-api.set('key', value);       // Set state + re-render
-api.batch(() => { ... });    // Batch multiple set() calls
-api.register('name', fn);   // Register client-side action
-```
-
----
-
-*This file was generated by Lightvel v1.3.74. For full documentation, see README.md.*
+If behavior conflicts arise, treat this file as source-of-truth for generated code conventions.

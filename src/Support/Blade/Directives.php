@@ -192,8 +192,8 @@ class Directives
             $view = preg_replace('/light:paginate-custom(?:="([^"]*)")?/', 'data-light-paginate-custom="${1:-true}"', $view);
 
             // --- Cloak skeleton directives ---
-            // light:cloak.target="saveUser" → skeleton shown only for that action
-            $view = preg_replace('/light:cloak\.target="([^"]+)"/', 'data-light-loading-target="$1"', $view);
+            // light:cloak.target="saveUser" → cloak participates in loading only for that action
+            $view = preg_replace('/light:cloak\.target="([^"]+)"/', 'data-light-loading="true" data-light-loading-target="$1"', $view);
             // light:cloak.delay="300" and light:cloak.min="800" reuse loading timings
             $view = preg_replace('/light:cloak\.delay="([^"]+)"/', 'data-light-loading-delay="$1"', $view);
             $view = preg_replace('/light:cloak\.min="([^"]+)"/', 'data-light-loading-min="$1"', $view);
@@ -201,8 +201,9 @@ class Directives
             $view = preg_replace('/light:cloak\.repeat="([^"]+)"/', 'data-light-cloak-repeat="$1"', $view);
             // light:cloak.remove hides real content while matching skeleton is visible
             $view = preg_replace('/light:cloak\.remove/', 'data-light-cloak-remove', $view);
-            // Base cloak now means loading-driven skeleton placeholder
-            $view = preg_replace('/light:cloak(?:="([^"]*)")?/', 'data-light-cloak="${1:-true}" data-light-loading="true"', $view);
+            // Base cloak is boot-only: visible on first load, hidden after init.
+            // For action-time cloak, add light:cloak.target.
+            $view = preg_replace('/light:cloak(?:="([^"]*)")?/', 'data-light-cloak="${1:-true}"', $view);
 
             return $view;
         });

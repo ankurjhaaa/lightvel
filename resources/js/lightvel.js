@@ -2643,20 +2643,21 @@
             explicitAction = liveTarget;
         }
 
-        let form = modelEl.closest('form[data-light-submit]');
-        if (!explicitAction && !form) {
+        // New behavior:
+        // - light:model.live only triggers when value is an explicit action name.
+        // - It never auto-submits nearest form action.
+        // - If no explicit action is provided, it behaves like plain light:model.
+        if (!explicitAction) {
             return;
         }
+
+        let form = modelEl.closest('form[data-light-submit]');
 
         if (explicitAction && !form && parseBoolean(getConfig().allowLiveActionWithoutForm, true) === false) {
             return;
         }
 
-        if (form && !validateScope(form)) {
-            return;
-        }
-
-        let action = explicitAction || (form ? form.dataset.lightSubmit : '');
+        let action = explicitAction;
         if (!action) {
             return;
         }
@@ -3316,7 +3317,12 @@
             let toggleRemove = (show) => {
                 let parent = el.parentElement;
                 if (!parent) return;
-                parent.querySelectorAll('[data-light-loading-remove], [data-light-cloak-remove]').forEach(rem => {
+                let selector = '[data-light-loading-remove]';
+                if (el.hasAttribute('data-light-cloak')) {
+                    selector += ', [data-light-cloak-remove]';
+                }
+
+                parent.querySelectorAll(selector).forEach(rem => {
                     rem.style.display = show ? '' : 'none';
                 });
             };
@@ -3849,7 +3855,8 @@
                 setFieldErrors(result.field, result.errors);
             }
 
-            // If light:model.live, auto-submit the parent form
+            // If light:model.live has explicit action name, trigger it.
+            // Otherwise behave as plain light:model (no auto form submit).
             triggerLiveModelAction(modelEl);
 
             return;

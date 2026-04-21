@@ -8,7 +8,7 @@
     <img src="https://img.shields.io/badge/Laravel-11%20%7C%2012%20%7C%2013-red" alt="Laravel">
     <img src="https://img.shields.io/badge/PHP-8.2%2B-blue" alt="PHP">
     <img src="https://img.shields.io/badge/License-MIT-green" alt="License">
-    <img src="https://img.shields.io/badge/Version-1.3.76-purple" alt="Version">
+    <img src="https://img.shields.io/badge/Version-1.3.82-purple" alt="Version">
   </p>
 </p>
 
@@ -195,21 +195,30 @@ Two-way data binding for form inputs. Syncs the input value with client-side sta
 
 #### `light:model.live`
 
-Supports two modes:
+`light:model.live` always updates the model value in state (same as `light:model`).
 
-1. `light:model.live="fieldName"` — updates state and triggers nearest parent form `light:submit` action.
-2. `light:model.live="actionName"` — updates state and directly calls that action (form not required).
+Action trigger behavior is explicit-only:
 
-Both modes debounce using `light:debounce` when provided.
+1. `light:model.live="actionName"` — updates state and calls that action with debounce.
+2. `light:model.live="fieldName"` or missing/invalid action name — **no action call**, behaves like plain `light:model`.
+
+Important rules:
+- It does **not** auto-submit parent `light:submit` forms.
+- Form submission still happens only on manual submit (`<button type="submit">` / Enter).
+- If action is not provided/found in template intent, live call is skipped safely.
 
 ```html
-<form light:submit="searchUsers">
+<form light:submit="saveUser">
     <input
-        type="text"
-        light:model.live="search"
+        type="email"
+        light:model="email"
+        light:model.live="email"
         light:debounce="300"
-        placeholder="Search..."
+        placeholder="No live action: only model sync"
     />
+
+    <!-- Manual submit triggers validation + saveUser -->
+    <button type="submit">Save</button>
 </form>
 
 <input
@@ -525,7 +534,7 @@ Navigate between pages without a full page reload. Uses AJAX to fetch the next p
 <a href="/settings" light:navigate>Settings</a>
 ```
 
-Shows a progress bar at the top during navigation. Supports browser back/forward buttons.
+Shows a progress bar at the top during navigation. Supports browser back/forward buttons and intent prefetch (hover/focus/touch) for faster transitions.
 
 ---
 
@@ -644,7 +653,7 @@ Delay action execution. Useful for search inputs to avoid excessive server calls
 
 ```html
 <!-- Wait 300ms after last keystroke before sending -->
-<input light:model.live="search" light:debounce="300" />
+<input light:model="search" light:model.live="searchUsers" light:debounce="300" />
 
 <!-- Supports ms and s units -->
 <input light:debounce="500ms" />
@@ -814,8 +823,8 @@ Use `light:cloak` without a target for first page-load skeletons.
 
 ## Targeted Skeleton (`light:cloak`)
 
-`light:cloak` now behaves as a loading-driven skeleton placeholder.
-It is shown only while its loading target is active.
+`light:cloak` is boot-only by default (first page load only).
+For action-time skeletons (search/paginate/save), add `light:cloak.target`.
 
 ```html
 <!-- Show custom skeleton while searchUsers runs -->
@@ -839,7 +848,7 @@ It is shown only while its loading target is active.
 
 | Modifier | Purpose |
 |----------|---------|
-| `light:cloak.target="actionName"` | Show skeleton only for that action |
+| `light:cloak.target="actionName"` | Enable cloak during loading for that action |
 | `light:cloak.repeat="N"` | Duplicate skeleton block N times |
 | `light:cloak.delay="ms"` | Show skeleton only after delay |
 | `light:cloak.min="ms"` | Keep skeleton visible for minimum time |
@@ -1067,11 +1076,26 @@ return [
     // Custom JS runtime path (if overriding the built-in)
     'script_path' => env('LIGHTVEL_SCRIPT_PATH'),
 
+    // Prefer published JS (public/vendor/lightvel/lightvel.js)
+    'use_published_script' => env('LIGHTVEL_USE_PUBLISHED_SCRIPT', false),
+
     // Progress bar color for light:navigate
     'progress_bar_color' => env('LIGHTVEL_PROGRESS_BAR_COLOR', '#111827'),
 
     // AJAX endpoint path
     'message_endpoint' => env('LIGHTVEL_MESSAGE_ENDPOINT', '/lightvel/message'),
+
+    // Include current state in every action request
+    'hydrate_state_on_action' => env('LIGHTVEL_HYDRATE_STATE_ON_ACTION', true),
+
+    // Allow model.live explicit action without form wrapper
+    'allow_live_action_without_form' => env('LIGHTVEL_ALLOW_LIVE_ACTION_WITHOUT_FORM', true),
+
+    // Strict invalid-action error responses
+    'strict_action_errors' => env('LIGHTVEL_STRICT_ACTION_ERRORS', true),
+
+    // Expose exception message in JSON response (keep false in production)
+    'expose_action_exceptions' => env('LIGHTVEL_EXPOSE_ACTION_EXCEPTIONS', false),
 ];
 ```
 
@@ -1148,10 +1172,10 @@ return ['users' => User::all()];
 
 ```html
 <!-- ✅ Waits 300ms between server calls -->
-<input light:model.live="search" light:debounce="300" />
+<input light:model="search" light:model.live="searchUsers" light:debounce="300" />
 
 <!-- ❌ Fires on every single keystroke -->
-<input light:model.live="search" />
+<input light:model="search" light:model.live="searchUsers" />
 ```
 
 ### 4. Keep `lightvel()` lean
