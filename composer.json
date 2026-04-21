@@ -1,7 +1,7 @@
 {
   "name": "lightvel/lightvel",
   "description": "Lightweight reactive Laravel package inspired by Livewire",
-  "version": "1.3.82",
+  "version": "1.3.83",
   "type": "library",
   "license": "MIT",
   "authors": [

@@ -1,48 +1,78 @@
-# LIGHTVEL_AI.md — AI Implementation Guide (Latest)
+# LIGHTVEL_AI.md — AI Agent Reference Guide (Latest)
 
-This file is the authoritative reference for AI assistants generating Lightvel code.
-It is aligned with the latest runtime/directive behavior.
-
----
-
-## 1) Core Model
-
-Lightvel is a server-driven reactive layer for Laravel Blade:
-- One Blade file contains component class + markup.
-- Initial page render returns HTML.
-- Interactions return JSON state (and optional `__patch`) over AJAX.
-- Runtime updates DOM bindings (`light:text`, `light:for`, etc.) client-side.
-
-No npm/build step is required.
+> This file is for AI assistants and agentic coding workflows.
+> Share this with any coding AI before asking it to build a Lightvel page.
+> It contains architecture rules, directive behavior, patterns, and anti-patterns.
 
 ---
 
-## 2) Required Layout Contract
+## 1) What Lightvel Is
 
-Every layout used by Lightvel pages should include:
-- CSRF token meta
+Lightvel is a reactive Laravel package where a single Blade file contains:
+- Component class (PHP logic)
+- UI template (HTML + directives)
+
+No npm, no build step, no SPA framework required.
+
+Execution model:
+1. Initial GET renders full HTML.
+2. User actions send AJAX JSON requests.
+3. Server returns changed state (and optionally `__patch`).
+4. Runtime updates bound DOM parts client-side.
+
+---
+
+## 2) Required Project Contract
+
+### 2.1 Layout requirements
+
+Your layout must include:
+- CSRF meta
 - `@lightScripts` before `</body>`
 
 ```blade
-<!doctype html>
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="csrf-token" content="{{ csrf_token() }}">
-  <title>{{ $title ?? 'App' }}</title>
+    <meta charset="UTF-8">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>{{ $title ?? 'App' }}</title>
 </head>
 <body>
-  {!! $slot !!}
-  @lightScripts
+    {!! $slot !!}
+    @lightScripts
 </body>
 </html>
 ```
 
-Without `@lightScripts`, directives render as static HTML and no reactivity runs.
+Without `@lightScripts`, directives stay static and no runtime reactivity works.
+
+### 2.2 Route registration
+
+```php
+// routes/web.php
+Route::lightvel('/users', 'pages.users');
+Route::lightvel('/product/{id}', 'pages.product');
+```
 
 ---
 
-## 3) Component Skeleton
+## 3) Canonical File Structure
+
+```text
+resources/views/
+├── layouts/
+│   └── app.blade.php
+└── pages/
+    └── users.blade.php
+
+routes/web.php
+config/lightvel.php
+```
+
+---
+
+## 4) Canonical Component Template
 
 ```blade
 @php
@@ -56,6 +86,9 @@ new #[Layout('app')] class extends Component {
             'users' => \App\Models\User::latest()->paginate(10),
             'search' => '',
             'showModal' => false,
+            'editingId' => null,
+            'name' => '',
+            'email' => '',
             'message' => '',
         ];
     }
@@ -65,12 +98,33 @@ new #[Layout('app')] class extends Component {
         $search = (string) $request->input('search', '');
         $page = max(1, (int) $request->input('page', 1));
 
-        $query = \App\Models\User::query()->latest();
+        $q = \App\Models\User::query()->latest();
         if ($search !== '') {
-            $query->where('name', 'like', "%{$search}%");
+            $q->where(function ($b) use ($search) {
+                $b->where('name', 'like', "%{$search}%")
+                  ->orWhere('email', 'like', "%{$search}%");
+            });
         }
 
-        return ['users' => $query->paginate(10, ['*'], 'page', $page)];
+        return ['users' => $q->paginate(10, ['*'], 'page', $page)];
+    }
+
+    public function saveUser(Request $request): array
+    {
+        $data = $request->validate([
+            'name' => 'required|min:3',
+            'email' => 'required|email',
+        ]);
+
+        $user = \App\Models\User::create($data);
+
+        return [
+            'showModal' => false,
+            'name' => '',
+            'email' => '',
+            'message' => 'Saved',
+            ...patch()->insert('users', $user),
+        ];
     }
 };
 @endphp
@@ -78,95 +132,154 @@ new #[Layout('app')] class extends Component {
 
 ---
 
-## 4) `light:model.live` (Important Latest Behavior)
+## 5) Critical Latest Semantics
 
-`light:model.live` no longer auto-submits nearest form.
+### 5.1 `light:model.live` (changed)
 
-### Rules
+`light:model.live` does not auto-submit nearest form anymore.
 
-1. It always updates model state (same as `light:model`).
-2. It triggers an action **only** if the value is an explicit action name.
-3. If value is missing / same as field name / not intended as action, it behaves like plain `light:model`.
-4. Manual form submit still controls validation + save actions.
+Rules:
+1. It always syncs state like `light:model`.
+2. It triggers a server action only when value is an explicit action name.
+3. If value equals field name / invalid / not action intent, no live action call is made.
+4. Manual submit still controls full form submit + validation workflow.
 
-### Correct pattern
+Correct usage:
 
 ```blade
 <form light:submit="saveUser">
-  <input light:model="email" light:model.live="email" />
-  <button type="submit">Save</button>
+    <input light:model="email" light:model.live="email" />
+    <button type="submit">Save</button>
 </form>
 
 <input light:model="search" light:model.live="searchUsers" light:debounce="300" />
 ```
 
-- First input: no live action call, only model sync.
-- Second input: calls `searchUsers` with debounce.
+### 5.2 `light:cloak` (changed)
+
+- Base `light:cloak` is boot-only (first page load).
+- For action-time skeletons, use `light:cloak.target="actionName"`.
+
+```blade
+<div light:cloak>Boot loader...</div>
+
+<div light:cloak light:cloak.target="searchUsers" light:cloak.remove>
+  Targeted loader for searchUsers
+</div>
+```
+
+### 5.3 `light:navigate` runtime
+
+Navigation uses prefetch + cache + in-flight dedupe and shows progress bar.
+It is SPA-style DOM swap behavior, not a full browser reload.
 
 ---
 
-## 5) Directive Reference (Practical)
+## 6) Full Directive Reference
 
-### Data / Output
-- `light:model="key"`
-- `light:model.live="actionName"`
-- `light:text="expr"`
-- `light:bind="key"` (alias of text)
-- `light:html="key"`
-- `light:src="expr"`
-- `{{ light.key }}`
-- `{{ light("expression") }}` (use string form to avoid PHP analyzer warnings)
+### Data binding
 
-### Actions
-- `light:click="method(args)"`
-- `light:submit="method"`
-- `light:change="method(...)"`
-- `light:input="method(...)"`
-- `light:function="a=1, showModal=true"` (client-only; no server trip)
+| Directive | Purpose | Example |
+|---|---|---|
+| `light:model="key"` | Two-way input state sync | `<input light:model="name" />` |
+| `light:model.live="actionName"` | Model sync + explicit live action | `<input light:model="search" light:model.live="searchUsers" />` |
+| `light:debounce="300"` | Delay action calls | `<input light:debounce="300" />` |
 
-### Conditional / Attr
-- `light:if="expr"`
-- `light:show="expr"`
-- `light:class="{...}"`
-- `light:attr.NAME="expr"`
+### Server actions
 
-### Repetition
-- `light:for="item in items"`
+| Directive | Purpose | Example |
+|---|---|---|
+| `light:click="method(args)"` | Call server action | `<button light:click="deleteUser(user.id)">` |
+| `light:submit="method"` | Form submit action | `<form light:submit="saveUser">` |
+| `light:input="method"` | Input-driven action | `<input light:input="searchUsers">` |
+| `light:change="method"` | Change-driven action | `<select light:change="loadFilter">` |
+
+### Client-only action
+
+| Directive | Purpose | Example |
+|---|---|---|
+| `light:function="expr"` | Instant state updates (no server) | `<button light:function="showModal=true">` |
+
+### Conditional / attributes
+
+| Directive | Purpose | Example |
+|---|---|---|
+| `light:if="expr"` | Conditional show/hide | `<div light:if="showModal">` |
+| `light:show="expr"` | Alias of conditional display | `<div light:show="isLoading">` |
+| `light:class="obj"` | Dynamic class toggling | `<div light:class="{'ring': active}">` |
+| `light:attr.NAME="expr"` | Reactive attribute binding | `<button light:attr.disabled="isSaving">` |
+
+### Lists
+
+| Directive | Purpose | Example |
+|---|---|---|
+| `light:for="item in items"` | Loop render | `<tr light:for="user in users">` |
+
+Inside loop context:
+- `item.*`
+- `$index`
+
+### Output
+
+| Directive | Purpose | Example |
+|---|---|---|
+| `light:text="expr"` | Text binding | `<span light:text="user.name">` |
+| `light:bind="key"` | Alias of text | `<span light:bind="message">` |
+| `light:html="key"` | Raw HTML bind | `<div light:html="rich_html">` |
+| `light:src="expr"` | Reactive src | `<img light:src="avatar_url">` |
+| `{{ light.key }}` | Reactive variable print | `{{ light.name }}` |
+| `{{ light("expr") }}` | Reactive expression print | `{{ light("name ? name : 'na'") }}` |
+
+Note: Prefer quoted expression form to avoid PHP analyzer constant warnings.
 
 ### Validation
-- `light:rules="required|min:3"`
-- `light:error="field"`
-- `light:error-message="custom text"`
 
-### Loading / Skeleton
-- `light:loading`
-- `light:loading.target="actionName"`
-- `light:loading.delay="300"`
-- `light:loading.min="800"`
-- `light:loading.remove`
+| Directive | Purpose | Example |
+|---|---|---|
+| `light:rules="..."` | Client-side rules | `<input light:rules="required|email">` |
+| `light:error="field"` | Error display | `<span light:error="email"></span>` |
+| `light:error-message="msg"` | Override error text | `<span light:error-message="Invalid email"></span>` |
 
-- `light:cloak` => boot-only skeleton (first load)
-- `light:cloak.target="actionName"` => action-time skeleton enabled
-- `light:cloak.repeat="N"`
-- `light:cloak.delay="ms"`
-- `light:cloak.min="ms"`
-- `light:cloak.remove`
+### Loading and skeleton
 
-### Navigation / Pagination
-- `light:navigate`
-- `light:paginate="users"`
-- `light:paginate-action="searchUsers"`
-- `light:paginate-custom`
+| Directive | Purpose | Example |
+|---|---|---|
+| `light:loading` | Show while request active | `<span light:loading>Loading...</span>` |
+| `light:loading.target="action"` | Action-scoped loading | `<span light:loading.target="saveUser">` |
+| `light:loading.delay="ms"` | Delay loading visibility | `<span light:loading.delay="300">` |
+| `light:loading.min="ms"` | Minimum visible time | `<span light:loading.min="800">` |
+| `light:loading.remove` | Hide counterpart during loading | `<span light:loading.remove>Save</span>` |
+| `light:cloak` | Boot-only skeleton | `<div light:cloak></div>` |
+| `light:cloak.target="action"` | Action-time skeleton | `<div light:cloak light:cloak.target="searchUsers">` |
+| `light:cloak.repeat="N"` | Repeat skeleton block | `<div light:cloak.repeat="6">` |
+| `light:cloak.remove` | Hide real content while cloak active | `<div light:cloak.remove>` |
 
-### Array / JSON Utilities
-- `light:array`, `light:array.add`, `light:array.check`, `light:array.all`
-- `light:json.add`, `light:json.remove`, `light:json.check`
+### Navigation / pagination
+
+| Directive | Purpose | Example |
+|---|---|---|
+| `light:navigate` | SPA route navigation | `<a href="/users" light:navigate>Users</a>` |
+| `light:paginate="users"` | Enable paginator UI | `<div light:paginate="users">` |
+| `light:paginate-action="searchUsers"` | Pagination action | `<div light:paginate-action="searchUsers">` |
+| `light:paginate-custom` | Use custom pagination markup | `<div light:paginate-custom>` |
+
+### Array / JSON utilities
+
+| Directive | Purpose | Example |
+|---|---|---|
+| `light:array="key"` | Ensure array state | `<div light:array="selected_ids">` |
+| `light:array.add="arr, val"` | Toggle membership | `<input light:array.add="selected_ids, Number(user.id)">` |
+| `light:array.check="arr, val"` | Membership check | `<input light:array.check="selected_ids, Number(user.id)">` |
+| `light:array.all="arr, list, idKey"` | Fill all values | `<button light:array.all="selected_ids, users, id">` |
+| `light:json.add="path, value"` | Push JSON item | `<button light:json.add="subjects_json, {name:'', max:100}">` |
+| `light:json.remove="path, target, mode"` | Remove JSON item | `<button light:json.remove="subjects_json, $index, 'index'">` |
+| `light:json.check="path, yes, no"` | Dot-path existence check | `<span light:json.check="'profile.city', 'SET', 'MISS'">` |
 
 ---
 
-## 6) Patch Operations (Use by Default for CRUD)
+## 7) Patch API (Recommended for CRUD)
 
-Prefer patch ops to avoid full list refetch:
+Always prefer patch operations for list mutation responses:
 
 ```php
 return [...patch()->insert('users', $user)];
@@ -174,93 +287,95 @@ return [...patch()->update('users', $user)];
 return [...patch()->delete('users', $id)];
 ```
 
-Patch keeps UI responsive and avoids replacing entire arrays.
+For paginated resources, patch avoids heavy full-list resend and keeps UI fast.
 
 ---
 
-## 7) Navigation Behavior (Latest)
+## 8) Agent Rules (Must Follow)
 
-`light:navigate` uses SPA-style fetch + DOM swap and includes intent prefetch:
-- prefetch on hover/focus/touch
-- response cache + in-flight dedupe
-- progress bar during navigation
-
-Use `light:function` for immediate UI shell toggles when needed; use `light:navigate` for route transitions.
-
----
-
-## 8) Performance Rules for AI
-
-1. Use `light:function` for UI-only operations (modal/tabs/open-close).
-2. Use `light:click` only when server/data change is required.
-3. Debounce live search inputs (`light:debounce="250"` or `300`).
-4. Prefer `patch()` for CRUD responses.
-5. Keep `lightvel()` initial payload small.
-6. Use `light:cloak` + `light:cloak.remove` for first-load UX.
-7. For action-time skeletons, always add `light:cloak.target`.
+1. Use `light:function` for UI-only transitions (modals, local toggles, tabs).
+2. Use server actions only for DB/network work.
+3. Keep `lightvel()` payload minimal.
+4. Ensure template-used keys are present in `lightvel()` initial state.
+5. Mirror core defaults in `light:state` when appropriate.
+6. Use `patch()` for CRUD list updates.
+7. Use `light:model` with `light:model.live`; do not rely on live alone.
+8. Never assume `light:model.live` submits parent form.
+9. For action skeletons, always add `light:cloak.target`.
+10. Keep layout contract (`@lightScripts` + CSRF meta).
 
 ---
 
-## 9) Common Mistakes (Avoid)
+## 9) Common Mistakes
 
-- Using `light:model.live="field"` expecting form auto-submit (no longer true).
-- Omitting `light:model` with `light:model.live` on the same input.
-- Returning full large collections after small CRUD changes instead of `patch()`.
-- Using unquoted `{{ light(condition ? 'a' : 'b') }}` in editors that flag PHP constants.
-  Prefer: `{{ light("condition ? 'a' : 'b'") }}`.
-- Expecting `light:cloak` to run for every action without `light:cloak.target`.
+- Expecting `light:model.live="field"` to auto-submit form.
+- Returning complete large collections after every small mutation.
+- Using `light:click` for simple modal open/close.
+- Forgetting `light:paginate-action` when using default paginator UI.
+- Expecting `light:cloak` to trigger on every action without target.
+- Using unquoted `{{ light(condition ? 'A' : 'B') }}` in strict analyzers.
 
----
-
-## 10) Minimal AI-Generated Page Template
+Preferred form:
 
 ```blade
-@php
-use Lightvel\Component;
-use Illuminate\Http\Request;
+{{ light("condition ? 'A' : 'B'") }}
+```
 
-new #[Layout('app')] class extends Component {
-    public function lightvel(): array
-    {
-        return [
-            'query' => '',
-            'items' => \App\Models\Item::latest()->paginate(10),
-        ];
-    }
+---
 
-    public function searchItems(Request $request): array
-    {
-        $query = (string) $request->input('query', '');
-        $page = max(1, (int) $request->input('page', 1));
+## 10) Patterns for Agentic Generation
 
-        $q = \App\Models\Item::query()->latest();
-        if ($query !== '') {
-            $q->where('name', 'like', "%{$query}%");
-        }
+### A) Live search (recommended)
 
-        return ['items' => $q->paginate(10, ['*'], 'page', $page)];
-    }
-};
-@endphp
+```blade
+<input light:model="search" light:model.live="searchUsers" light:debounce="300" />
+```
 
-<div light:state="query='', items=[]">
-    <input light:model="query" light:model.live="searchItems" light:debounce="300" />
+### B) Manual form submit + model.live field-only
 
-    <div light:cloak class="space-y-2">
-        <div class="h-4 rounded bg-gray-200"></div>
-        <div class="h-4 rounded bg-gray-200"></div>
-    </div>
+```blade
+<form light:submit="saveUser">
+  <input light:model="email" light:model.live="email" />
+  <button type="submit">Save</button>
+</form>
+```
 
-    <div light:cloak.remove>
-        <div light:for="item in items">
-            <span light:text="item.name"></span>
-        </div>
-    </div>
+### C) CRUD delete with row-level loader
 
-    <div light:paginate="items" light:paginate-action="searchItems"></div>
+```blade
+<button light:click="deleteUser(user.id)">
+  <span light:loading light:loading.target="deleteUser(user.id)">Deleting...</span>
+  <span light:loading.remove>Delete</span>
+</button>
+```
+
+### D) Boot skeleton + real content
+
+```blade
+<div light:cloak class="space-y-2">
+  <div class="h-4 rounded bg-gray-200"></div>
+  <div class="h-4 rounded bg-gray-200"></div>
+</div>
+
+<div light:cloak.remove>
+  <div light:for="item in items"><span light:text="item.name"></span></div>
 </div>
 ```
 
 ---
 
-If behavior conflicts arise, treat this file as source-of-truth for generated code conventions.
+## 11) Quick Build Checklist for AI
+
+- Route added with `Route::lightvel(...)`
+- Layout has CSRF + `@lightScripts`
+- Component state keys complete
+- Action methods return array payloads
+- Validation in action methods when required
+- Patch operations for array list updates
+- Loading/skeleton UX in long actions
+- Pagination wired (`light:paginate` + action)
+- Readable messages (`message`, `status`) for UX feedback
+
+---
+
+When ambiguity occurs, follow this file and prefer minimal, predictable behavior over hidden automation.
